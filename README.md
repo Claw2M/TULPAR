@@ -1,11 +1,9 @@
-# TULPAR
+---
 
-> A modular autonomous robotics platform.
+## Current Version
 
-## Vision
+**TULPAR Foundation**
 
-TULPAR is an open, modular and scalable robotics platform designed for autonomous aerial, ground and marine systems.
+`v0.1.0-alpha`
 
-The project aims to provide a modern foundation for communication, mission execution, artificial intelligence integration and autonomous decision making.
-
-**Status:** Early Development 🚧
+Status: Active Development 🚧
