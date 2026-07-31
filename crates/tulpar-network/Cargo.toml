@@ -1,0 +1,7 @@
+[package]
+name = "tulpar-network"
+version = "0.1.0"
+edition = "2024"
+
+[dependencies]
+tulpar-protocol = { path = "../tulpar-protocol" }

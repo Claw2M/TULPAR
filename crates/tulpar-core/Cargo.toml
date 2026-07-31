@@ -4,4 +4,10 @@ version = "0.1.0"
 edition = "2024"
 
 [dependencies]
+tulpar-common = { path = "../tulpar-common" }
+tulpar-network = { path = "../tulpar-network" }
 tulpar-protocol = { path = "../tulpar-protocol" }
+tulpar-vehicle = { path = "../tulpar-vehicle" }
+tulpar-telemetry = { path = "../tulpar-telemetry" }
+
+tokio = { version = "1", features = ["full"] }

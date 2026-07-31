@@ -3,6 +3,11 @@ resolver = "2"
 
 members = [
     "crates/tulpar-core",
-    "crates/tulpar-protocol"
+    "crates/tulpar-common",
+    "crates/tulpar-protocol",
+    "crates/tulpar-network",
+    "crates/tulpar-listener",
+    "crates/tulpar-vehicle",
+    "crates/tulpar-telemetry",
+    "crates/tulpar-telemetry"
 ]
-

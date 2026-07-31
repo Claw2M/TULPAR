@@ -5,3 +5,4 @@ edition = "2024"
 
 [dependencies]
 tulpar-common = { path = "../tulpar-common" }
+tulpar-telemetry = { path = "../tulpar-telemetry" }

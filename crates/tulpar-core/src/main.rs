@@ -1,15 +1,20 @@
 mod boot;
 mod config;
-mod logger;
 mod event;
+mod logger;
+mod service;
+mod service_manager;
+mod vehicle_manager;
+mod vehicle_registry;
+mod network_engine;
 
-use boot::Boot;
+mod runtime;
+mod services;
+mod network;
+mod state;
+mod handlers;
 
-fn main() {
-    println!("=====================================");
-    println!("       TULPAR Core v0.1.0-alpha");
-    println!("=====================================");
-    println!();
-
-    Boot::start();
+#[tokio::main]
+async fn main() {
+    boot::Boot::start().await;
 }

@@ -1,14 +1,16 @@
 use crate::{VehicleState, VehicleType};
+use tulpar_telemetry::VehicleTelemetry;
 
 #[derive(Debug)]
-pub struct Vehicle {
-    pub id: u32,
-    pub name: String,
-    pub vehicle_type: VehicleType,
-    pub state: VehicleState,
+pub struct BasicVehicle {
+    id: u32,
+    name: String,
+    vehicle_type: VehicleType,
+    state: VehicleState,
+    telemetry: VehicleTelemetry,
 }
 
-impl Vehicle {
+impl BasicVehicle {
     pub fn new(
         id: u32,
         name: &str,
@@ -19,26 +21,35 @@ impl Vehicle {
             name: name.to_string(),
             vehicle_type,
             state: VehicleState::Disconnected,
+            telemetry: VehicleTelemetry::default(),
         }
     }
 
-    pub fn connect(&mut self) {
-        self.state = VehicleState::Connected;
+    pub fn id(&self) -> u32 {
+        self.id
     }
 
-    pub fn arm(&mut self) {
-        self.state = VehicleState::Armed;
+    pub fn name(&self) -> &str {
+        &self.name
     }
 
-    pub fn takeoff(&mut self) {
-        self.state = VehicleState::Flying;
+    pub fn vehicle_type(&self) -> VehicleType {
+        self.vehicle_type
     }
 
-    pub fn land(&mut self) {
-        self.state = VehicleState::Landing;
+    pub fn state(&self) -> VehicleState {
+        self.state
     }
 
-    pub fn disconnect(&mut self) {
-        self.state = VehicleState::Disconnected;
+    pub fn set_state(&mut self, state: VehicleState) {
+        self.state = state;
+    }
+
+    pub fn telemetry(&self) -> &VehicleTelemetry {
+        &self.telemetry
+    }
+
+    pub fn telemetry_mut(&mut self) -> &mut VehicleTelemetry {
+        &mut self.telemetry
     }
 }
