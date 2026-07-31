@@ -1,4 +1,7 @@
 use crate::logger::Logger;
+use crate::network::router::PacketRouter;
+
+use tulpar_protocol::Packet;
 
 pub struct PacketDispatcher;
 
@@ -7,30 +10,15 @@ impl PacketDispatcher {
         Self
     }
 
-    pub fn dispatch(&self, packet: &[u8]) {
-        if packet.len() < 4 {
-            Logger::error("Invalid packet.");
-            return;
-        }
-
-        let packet_type = packet[3];
-
-        match packet_type {
-            0x01 => {
-                Logger::info("Heartbeat packet received.");
+    pub fn dispatch(&self, bytes: &[u8]) {
+        let packet = match Packet::from_bytes(bytes) {
+            Some(packet) => packet,
+            None => {
+                Logger::error("Failed to parse packet.");
+                return;
             }
+        };
 
-            0x02 => {
-                Logger::info("Telemetry packet received.");
-            }
-
-            0x03 => {
-                Logger::info("Command packet received.");
-            }
-
-            _ => {
-                Logger::warn("Unknown packet.");
-            }
-        }
+        PacketRouter::route(packet);
     }
 }

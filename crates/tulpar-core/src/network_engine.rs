@@ -1,3 +1,4 @@
+use std::io::ErrorKind;
 use std::thread;
 
 use tulpar_network::UdpTransport;
@@ -15,9 +16,9 @@ impl NetworkEngine {
     }
 
     pub fn send(&self, bytes: &[u8], target: &str) {
-        self.transport
-            .send(bytes, target)
-            .expect("Failed to send packet");
+        if let Err(err) = self.transport.send(bytes, target) {
+            eprintln!("Send error: {}", err);
+        }
     }
 
     pub fn receive(&self) -> std::io::Result<Vec<u8>> {
@@ -31,18 +32,28 @@ impl NetworkEngine {
     {
         let socket = self
             .transport
-            .socket()
-            .try_clone()
+            .clone_socket()
             .expect("Failed to clone UDP socket");
 
-        let transport = UdpTransport::from_socket(socket);
-
         thread::spawn(move || {
+            let transport = UdpTransport::from_socket(socket);
+
             loop {
                 match transport.receive() {
-                    Ok((packet, _)) => callback(packet),
+                    Ok((packet, _)) => {
+                        callback(packet);
+                    }
 
                     Err(err) => {
+                        // Windows UDP ICMP Port Unreachable
+                        if err.raw_os_error() == Some(10054) {
+                            continue;
+                        }
+
+                        if err.kind() == ErrorKind::WouldBlock {
+                            continue;
+                        }
+
                         eprintln!("Receiver error: {}", err);
                     }
                 }

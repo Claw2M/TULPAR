@@ -213,6 +213,7 @@ name = "tulpar-listener"
 version = "0.1.0"
 dependencies = [
  "tulpar-network",
+ "tulpar-protocol",
 ]
 
 [[package]]

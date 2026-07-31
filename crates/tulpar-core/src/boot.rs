@@ -1,15 +1,15 @@
-use crate::event::Event;
+use crate::event::{Event, EventBus};
 use crate::logger::Logger;
 use crate::network::dispatcher::PacketDispatcher;
+use crate::network_engine::NetworkEngine;
 use crate::service_manager::ServiceManager;
+use crate::services::heartbeat::HeartbeatService;
 use crate::state::app_state::{AppState, SharedState};
 use crate::vehicle_manager::VehicleManager;
-use crate::network_engine::NetworkEngine;
-use crate::services::heartbeat::HeartbeatService;
+use crate::services::telemetry::TelemetryService;
 
 use std::sync::{Arc, RwLock};
 
-use tulpar_network::UdpTransport;
 use tulpar_protocol::Packet;
 
 pub struct Boot;
@@ -30,10 +30,16 @@ impl Boot {
         let state: SharedState = Arc::new(RwLock::new(AppState::new()));
 
         // -------------------------------------------------
-        // Events
+        // Event Bus
         // -------------------------------------------------
 
-        println!("[EVENT] {:?}", Event::CoreStarted);
+        let event_bus = Arc::new(EventBus::new());
+
+        event_bus.subscribe(|event| {
+            Logger::info(&format!("EVENT => {:?}", event));
+        });
+
+        event_bus.publish(Event::CoreStarted);
 
         // -------------------------------------------------
         // Logger
@@ -46,6 +52,7 @@ impl Boot {
         // -------------------------------------------------
 
         Logger::info("Configuration loaded.");
+        event_bus.publish(Event::ConfigurationLoaded);
 
         // -------------------------------------------------
         // Protocol
@@ -63,19 +70,25 @@ impl Boot {
         // Network
         // -------------------------------------------------
 
-        let network = NetworkEngine::new("0.0.0.0:0");
+        let network = Arc::new(NetworkEngine::new("0.0.0.0:0"));
+
+        {
+            let event_bus = event_bus.clone();
+
+            network.start_receiver(move |packet| {
+                let dispatcher = PacketDispatcher::new();
+                dispatcher.dispatch(&packet);
+            });
+        }
+
+        Logger::info("UDP Receiver started.");
 
         network.send(&bytes, "127.0.0.1:14550");
 
+        event_bus.publish(Event::PacketSent);
+        event_bus.publish(Event::HeartbeatSent);
+
         Logger::info("Heartbeat sent via UDP.");
-
-        // -------------------------------------------------
-        // Packet Dispatcher
-        // -------------------------------------------------
-
-        let dispatcher = PacketDispatcher::new();
-
-        dispatcher.dispatch(&bytes);
 
         // -------------------------------------------------
         // Services
@@ -83,7 +96,12 @@ impl Boot {
 
         let mut service_manager = ServiceManager::new();
 
-        service_manager.register(Box::new(HeartbeatService::new()));
+        service_manager.register(Box::new(
+            HeartbeatService::new(network.clone()),
+        ));
+        service_manager.register(Box::new(
+            TelemetryService::new(network.clone()),
+        ));
 
         Logger::info(&format!(
             "{} service(s) registered.",
@@ -100,13 +118,15 @@ impl Boot {
 
         vehicle_manager.create_demo_vehicle();
 
+        event_bus.publish(Event::VehicleConnected);
+
         Logger::info(&format!(
             "{} vehicle(s) loaded.",
             vehicle_manager.vehicle_count()
         ));
 
         // -------------------------------------------------
-        // Shared State Update
+        // Shared State
         // -------------------------------------------------
 
         {
@@ -136,5 +156,9 @@ impl Boot {
         println!();
 
         Logger::success("TULPAR Core is ready.");
+
+        loop {
+            tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        }
     }
 }

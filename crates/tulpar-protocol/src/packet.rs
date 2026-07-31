@@ -1,4 +1,9 @@
-use crate::{Footer, Header, PacketType};
+use crate::{
+    Footer,
+    Header,
+    PacketType,
+    Telemetry,
+};
 
 #[derive(Debug, Clone)]
 pub struct Packet {
@@ -8,6 +13,7 @@ pub struct Packet {
 }
 
 impl Packet {
+    /// Heartbeat paketi
     pub fn heartbeat() -> Self {
         Self {
             header: Header::new(
@@ -20,33 +26,58 @@ impl Packet {
         }
     }
 
+    /// Telemetry paketi
+    pub fn telemetry(data: Telemetry) -> Self {
+        let mut payload = Vec::new();
+
+        // GPS
+        payload.extend_from_slice(&data.latitude.to_le_bytes());
+        payload.extend_from_slice(&data.longitude.to_le_bytes());
+        payload.extend_from_slice(&data.altitude.to_le_bytes());
+
+        // Attitude
+        payload.extend_from_slice(&data.roll.to_le_bytes());
+        payload.extend_from_slice(&data.pitch.to_le_bytes());
+        payload.extend_from_slice(&data.yaw.to_le_bytes());
+
+        // Battery
+        payload.push(data.battery);
+
+        // Satellites
+        payload.push(data.satellites);
+
+        Self {
+            header: Header::new(
+                PacketType::Telemetry,
+                1,
+                payload.len() as u16,
+            ),
+            payload,
+            footer: Footer::new(),
+        }
+    }
+
+    /// Packet -> Bytes
     pub fn to_bytes(&self) -> Vec<u8> {
         let mut bytes = Vec::new();
 
-        // Magic
+        // Header
         bytes.extend_from_slice(&self.header.magic);
-
-        // Version
         bytes.push(self.header.version);
-
-        // Packet Type
         bytes.push(self.header.packet_type as u8);
-
-        // Sequence
         bytes.extend_from_slice(&self.header.sequence.to_le_bytes());
-
-        // Payload Size
         bytes.extend_from_slice(&self.header.payload_size.to_le_bytes());
 
         // Payload
         bytes.extend_from_slice(&self.payload);
 
-        // CRC (şimdilik sahte)
+        // CRC (şimdilik dummy)
         bytes.push(0x00);
 
         bytes
     }
 
+    /// Bytes -> Packet
     pub fn from_bytes(bytes: &[u8]) -> Option<Self> {
         if bytes.len() < 9 {
             return None;
@@ -58,6 +89,8 @@ impl Packet {
 
         let packet_type = match bytes[3] {
             0x01 => PacketType::Heartbeat,
+            0x02 => PacketType::Telemetry,
+            0x03 => PacketType::Command,
             _ => return None,
         };
 
@@ -65,11 +98,9 @@ impl Packet {
             u16::from_le_bytes([bytes[4], bytes[5]]);
 
         let payload_size =
-            u16::from_le_bytes([bytes[6], bytes[7]]);
+            u16::from_le_bytes([bytes[6], bytes[7]]) as usize;
 
-        let payload_size = payload_size as usize;
-
-        if bytes.len() < 9 + payload_size {
+        if bytes.len() < 8 + payload_size + 1 {
             return None;
         }
 
