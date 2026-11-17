@@ -158,10 +158,15 @@ public class MissionProtocolTests
                         return Task.CompletedTask;
                     }
 
-                    // Inject an unrelated MISSION request (should be ignored during Fence upload), then valid Fence seq 0.
-                    var stray = new MissionRequestIntMessage(GcsSysId, GcsCompId, 99, MavMissionType.Mission);
+                    // Inject unrelated v2 MISSION requests (both MISSION_REQUEST_INT and zero-truncated legacy MISSION_REQUEST)
+                    // which must be ignored during Fence upload, then send valid Fence seq 0.
+                    var strayInt = new MissionRequestIntMessage(GcsSysId, GcsCompId, 99, MavMissionType.Mission);
                     manager.HandleIncomingFrame(ParseOutgoingPacket(
-                        MavlinkEncoder.EncodeV2(VehicleSysId, VehicleCompId, vehicleSeq++, stray)).Single());
+                        MavlinkEncoder.EncodeV2(VehicleSysId, VehicleCompId, vehicleSeq++, strayInt)).Single());
+
+                    var strayV2Legacy = new MissionRequestMessage(GcsSysId, GcsCompId, 98, MavMissionType.Mission);
+                    manager.HandleIncomingFrame(ParseOutgoingPacket(
+                        MavlinkEncoder.EncodeV2(VehicleSysId, VehicleCompId, vehicleSeq++, strayV2Legacy)).Single());
 
                     var req0 = new MissionRequestIntMessage(GcsSysId, GcsCompId, 0, MavMissionType.Fence);
                     manager.HandleIncomingFrame(ParseOutgoingPacket(
@@ -176,12 +181,18 @@ public class MissionProtocolTests
                     if (itemMsg.Seq < 3)
                     {
                         ushort next = (ushort)(itemMsg.Seq + 1);
-                        // Also verify legacy MISSION_REQUEST without mission_type matches active Fence transfer.
+                        // Also verify legacy MAVLink v1 MISSION_REQUEST (4-byte payload, no mission_type) matches active Fence transfer.
                         if (next == 1)
                         {
                             var legacyReq = new MissionRequestMessage(GcsSysId, GcsCompId, next);
-                            manager.HandleIncomingFrame(ParseOutgoingPacket(
-                                MavlinkEncoder.EncodeV2(VehicleSysId, VehicleCompId, vehicleSeq++, legacyReq)).Single());
+                            byte[] rawV1 = MavlinkEncoder.EncodeV1(
+                                VehicleSysId,
+                                VehicleCompId,
+                                vehicleSeq++,
+                                (byte)MissionRequestMessage.MsgId,
+                                legacyReq.EncodePayload().AsSpan(0, 4),
+                                MissionRequestMessage.MsgCrcExtra);
+                            manager.HandleIncomingFrame(ParseOutgoingPacket(rawV1).Single());
                         }
                         else
                         {
@@ -438,6 +449,55 @@ public class MissionProtocolTests
         Assert.NotNull(sentAck);
         Assert.Equal(MavMissionResult.Accepted, sentAck.Type);
         Assert.Equal(MavMissionType.Fence, sentAck.MissionType);
+    }
+
+    [Fact]
+    public async Task DownloadFence_IgnoresZeroTruncatedV2MissionItemForMissionType()
+    {
+        var manager = new MissionProtocolManager(GcsSysId, GcsCompId, stepTimeoutMs: 150, maxRetries: 1);
+        byte vehicleSeq = 0;
+
+        Task SendAsync(byte[] bytes, CancellationToken ct)
+        {
+            MavlinkFrame frame = ParseOutgoingPacket(bytes).Single();
+            if (frame.MessageId == MissionRequestListMessage.MsgId)
+            {
+                var count = new MissionCountMessage(GcsSysId, GcsCompId, 1, MavMissionType.Fence);
+                manager.HandleIncomingFrame(ParseOutgoingPacket(
+                    MavlinkEncoder.EncodeV2(VehicleSysId, VehicleCompId, vehicleSeq++, count)).Single());
+            }
+            else if (frame.MessageId == MissionRequestIntMessage.MsgId)
+            {
+                // Stray v2 zero-truncated MISSION_ITEM (#39) with MissionType = Mission (0) must NOT satisfy Fence seq 0.
+                var strayMissionItem = new MissionItemMessage(
+                    GcsSysId, GcsCompId, 0, MavFrame.GlobalInt, MavCmd.NavWaypoint,
+                    0, 1, 0f, 0f, 0f, 0f, 10f, 20f, 999f, MavMissionType.Mission);
+                manager.HandleIncomingFrame(ParseOutgoingPacket(
+                    MavlinkEncoder.EncodeV2(VehicleSysId, VehicleCompId, vehicleSeq++, strayMissionItem)).Single());
+
+                var realFenceItem = new MissionItemIntMessage(
+                    GcsSysId, GcsCompId, 0, MavFrame.GlobalInt, MavCmd.NavFenceReturnPoint,
+                    0, 1, 0f, 0f, 0f, 0f, 410082376, 289783589, 50f, MavMissionType.Fence);
+                manager.HandleIncomingFrame(ParseOutgoingPacket(
+                    MavlinkEncoder.EncodeV2(VehicleSysId, VehicleCompId, vehicleSeq++, realFenceItem)).Single());
+            }
+
+            return Task.CompletedTask;
+        }
+
+        IReadOnlyList<MissionItem> downloaded = await manager.DownloadAsync(
+            VehicleSysId,
+            VehicleCompId,
+            MavMissionType.Fence,
+            SendAsync,
+            progress: null,
+            CancellationToken.None);
+
+        Assert.Single(downloaded);
+        Assert.Equal(MavCmd.NavFenceReturnPoint, downloaded[0].Command);
+        Assert.Equal(41.0082376, downloaded[0].Latitude, 7);
+        Assert.Equal(28.9783589, downloaded[0].Longitude, 7);
+        Assert.Equal(50f, downloaded[0].Altitude);
     }
 
     [Fact]

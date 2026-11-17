@@ -504,40 +504,29 @@ public sealed class MissionProtocolManager
             or MissionRequestIntMessage.MsgId
             or MissionItemIntMessage.MsgId;
 
-    private static bool MatchesTransferMissionType(MavlinkFrame frame, MavMissionType activeType)
-    {
-        switch (frame.MessageId)
+    private static bool MatchesTransferMissionType(MavlinkFrame frame, MavMissionType activeType) =>
+        frame.MessageId switch
         {
-            case MissionRequestIntMessage.MsgId:
-                return MissionRequestIntMessage.Decode(frame).MissionType == activeType;
+            MissionRequestIntMessage.MsgId =>
+                MissionRequestIntMessage.Decode(frame).MissionType == activeType,
 
-            case MissionRequestMessage.MsgId:
-            {
-                MissionRequestMessage req = MissionRequestMessage.Decode(frame);
-                bool hasExplicitMissionType = frame.Version >= 2 && frame.Payload.Length >= MissionRequestMessage.WireSize;
-                return req.MissionType == activeType || !hasExplicitMissionType;
-            }
+            MissionRequestMessage.MsgId =>
+                frame.Version == 1 || MissionRequestMessage.Decode(frame).MissionType == activeType,
 
-            case MissionItemIntMessage.MsgId:
-                return MissionItemIntMessage.Decode(frame).MissionType == activeType;
+            MissionItemIntMessage.MsgId =>
+                MissionItemIntMessage.Decode(frame).MissionType == activeType,
 
-            case MissionItemMessage.MsgId:
-            {
-                MissionItemMessage item = MissionItemMessage.Decode(frame);
-                bool hasExplicitMissionType = frame.Version >= 2 && frame.Payload.Length >= MissionItemMessage.WireSize;
-                return item.MissionType == activeType || !hasExplicitMissionType;
-            }
+            MissionItemMessage.MsgId =>
+                frame.Version == 1 || MissionItemMessage.Decode(frame).MissionType == activeType,
 
-            case MissionCountMessage.MsgId:
-                return frame.Version == 1 || MissionCountMessage.Decode(frame).MissionType == activeType;
+            MissionCountMessage.MsgId =>
+                frame.Version == 1 || MissionCountMessage.Decode(frame).MissionType == activeType,
 
-            case MissionAckMessage.MsgId:
-                return frame.Version == 1 || MissionAckMessage.Decode(frame).MissionType == activeType;
+            MissionAckMessage.MsgId =>
+                frame.Version == 1 || MissionAckMessage.Decode(frame).MissionType == activeType,
 
-            default:
-                return false;
-        }
-    }
+            _ => false
+        };
 
     private sealed class ActiveTransfer(byte targetSysId, byte targetCompId, MavMissionType missionType)
     {
