@@ -694,34 +694,45 @@ public class MainViewModelTests
     }
 
     [Fact]
-    public async Task VideoFeedControl_KeepsVideoViewCollapsedWhenIdle_And_SwapsCornerRadiusOnPrimary()
+    public void VideoFeedControl_KeepsVideoViewCollapsedWhenIdle_And_SwapsCornerRadiusOnPrimary()
     {
-        var transport = new FakeTransport();
-        await using MainViewModel vm = CreateTestViewModel(transport, out _);
-
         RunOnStaThread(() =>
         {
-            using var videoControl = new VideoFeedControl();
-            videoControl.DataContext = vm;
-            videoControl.Measure(new Size(340, 210));
-            videoControl.Arrange(new Rect(0, 0, 340, 210));
-            videoControl.UpdateLayout();
+            var transport = new FakeTransport();
+            MainViewModel vm = CreateTestViewModel(transport, out _);
+            try
+            {
+                using var videoControl = new VideoFeedControl();
+                videoControl.DataContext = vm;
+                videoControl.Measure(new Size(340, 210));
+                videoControl.Arrange(new Rect(0, 0, 340, 210));
+                videoControl.UpdateLayout();
 
-            var videoView = Assert.IsAssignableFrom<UIElement>(videoControl.FindName("VideoViewControl"));
-            var idleOverlay = Assert.IsAssignableFrom<UIElement>(videoControl.FindName("WpfIdleOverlay"));
-            var outerFrame = Assert.IsType<Border>(videoControl.FindName("OuterFrame"));
+                var videoView = Assert.IsAssignableFrom<UIElement>(videoControl.FindName("VideoViewControl"));
+                var idleOverlay = Assert.IsAssignableFrom<UIElement>(videoControl.FindName("WpfIdleOverlay"));
+                var outerFrame = Assert.IsType<Border>(videoControl.FindName("OuterFrame"));
 
-            Assert.Equal(Visibility.Collapsed, videoView.Visibility);
-            Assert.Equal(Visibility.Visible, idleOverlay.Visibility);
-            Assert.Equal(new CornerRadius(8), outerFrame.CornerRadius);
+                Assert.Equal(Visibility.Collapsed, videoView.Visibility);
+                Assert.Equal(Visibility.Visible, idleOverlay.Visibility);
+                Assert.Equal(new CornerRadius(8), outerFrame.CornerRadius);
 
-            videoControl.StartStream("rtsp://127.0.0.1:8554/live");
-            Assert.Equal(Visibility.Collapsed, videoView.Visibility);
+                videoControl.StartStream("rtsp://127.0.0.1:8554/live");
+                Assert.Equal(Visibility.Collapsed, videoView.Visibility);
 
-            vm.SwapMapAndCameraCommand.Execute(null);
-            videoControl.UpdateLayout();
-            Assert.True(vm.IsCameraPrimary);
-            Assert.Equal(new CornerRadius(0), outerFrame.CornerRadius);
+                vm.SwapMapAndCameraCommand.Execute(null);
+                videoControl.UpdateLayout();
+                Assert.True(vm.IsCameraPrimary);
+                Assert.Equal(new CornerRadius(0), outerFrame.CornerRadius);
+
+                var missionPanel = new MissionPlannerPanel { DataContext = vm };
+                missionPanel.Measure(new Size(800, 240));
+                missionPanel.Arrange(new Rect(0, 0, 800, 240));
+                missionPanel.UpdateLayout();
+            }
+            finally
+            {
+                vm.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
         });
     }
 

@@ -165,7 +165,7 @@
                         <ProgressBar Grid.Column="1"
                                      Minimum="0"
                                      Maximum="100"
-                                     Value="{Binding MissionTransferProgressPercent}"
+                                     Value="{Binding MissionTransferProgressPercent, Mode=OneWay}"
                                      Style="{DynamicResource SpaceXProgressBarStyle}"
                                      VerticalAlignment="Center" />
                     </Grid>
