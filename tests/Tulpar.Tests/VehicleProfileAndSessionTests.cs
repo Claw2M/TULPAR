@@ -533,4 +533,134 @@ public class VehicleProfileAndSessionTests
         Assert.Throws<ArgumentOutOfRangeException>(() =>
             profile.BuildGuidedTargetCommand(1, 1, 255, 190, 1, MavAutopilot.ArduPilotMega, 41.0, 28.0, float.PositiveInfinity));
     }
+
+    [Fact]
+    public void Session_IgnoresPreHeartbeatTelemetryAndZeroSystemIdHeartbeat()
+    {
+        var session = new VehicleSession();
+        var snapshots = new List<TelemetrySnapshot>();
+        var statuses = new List<StatusTextMessage>();
+        var acks = new List<MavlinkFrame>();
+
+        session.Bus.SnapshotUpdated += snapshots.Add;
+        session.Bus.StatusTextReceived += statuses.Add;
+        session.Bus.CommandAckReceived += acks.Add;
+
+        // Pre-heartbeat telemetry from sysId=2 and malformed sysId=0 heartbeat must be ignored
+        byte[] preHeartbeatStream =
+        [
+            ..EncodeV2(2, 1, 1, new GlobalPositionIntMessage(100u, 399250180, 328369560, 900000, 50000, 500, 0, -100, 9000)),
+            ..EncodeV2(2, 1, 2, new HomePositionMessage(399200000, 328300000, 850000)),
+            ..EncodeV2(2, 1, 3, new AttitudeMessage(100u, 0.5f, 0.25f, 1.0f)),
+            ..EncodeV2(2, 1, 4, new SysStatusMessage(0, 0, 0, 100, 16800, 1200, 80)),
+            ..EncodeV2(2, 1, 5, new VfrHudMessage(20f, 21f, 90, 50, 900f, 1f)),
+            ..EncodeV2(2, 1, 6, new StatusTextMessage(MavSeverity.Warning, "STALE STATUS")),
+            ..EncodeV2(2, 1, 7, new CommandAckMessage(MavCmd.ComponentArmDisarm, MavResult.Accepted)),
+            ..EncodeV2(0, 1, 8, new HeartbeatMessage(MavType.Quadrotor, MavAutopilot.ArduPilotMega, MavModeFlag.CustomModeEnabled, 4u, MavState.Active))
+        ];
+
+        session.ProcessIncomingBytes(preHeartbeatStream);
+
+        Assert.False(session.Current.IsConnected);
+        Assert.Equal((byte)0, session.Current.SystemId);
+        Assert.Null(session.ActiveProfile);
+        Assert.Empty(snapshots);
+        Assert.Empty(statuses);
+        Assert.Empty(acks);
+
+        // First real vehicle heartbeat on sysId=1 must start completely clean
+        byte[] vehicle1Hb = EncodeV2(1, 1, 1, new HeartbeatMessage(
+            MavType.FixedWing, MavAutopilot.ArduPilotMega, MavModeFlag.CustomModeEnabled, 15u, MavState.Active));
+        session.ProcessIncomingBytes(vehicle1Hb);
+
+        TelemetrySnapshot cur = session.Current;
+        Assert.True(cur.IsConnected);
+        Assert.Equal((byte)1, cur.SystemId);
+        Assert.Equal(VehicleCategory.FixedWing, cur.VehicleCategory);
+        Assert.False(cur.HasHome);
+        Assert.Equal(0.0, cur.Latitude);
+        Assert.Equal(0.0, cur.Longitude);
+        Assert.Equal(0.0, cur.RollDeg);
+        Assert.Equal(0.0, cur.BatteryVoltageVolts);
+        Assert.Equal(0.0, cur.AirspeedMps);
+        Assert.Single(snapshots);
+    }
+
+    [Fact]
+    public void Session_IgnoresAuxiliaryAndNonAutopilotHeartbeatsEvenWithValidAutopilot()
+    {
+        var session = new VehicleSession();
+
+        // Auxiliary and invalid-autopilot tracker heartbeats prior to aircraft must not claim initial lock
+        byte[] preLockAux =
+        [
+            ..EncodeV2(1, 100, 1, new HeartbeatMessage(MavType.OnboardController, MavAutopilot.Generic, MavModeFlag.None, 0u, MavState.Active)),
+            ..EncodeV2(3, 1, 1, new HeartbeatMessage(MavType.AntennaTracker, MavAutopilot.Invalid, MavModeFlag.None, 0u, MavState.Active))
+        ];
+        session.ProcessIncomingBytes(preLockAux);
+        Assert.False(session.Current.IsConnected);
+        Assert.Equal((byte)0, session.Current.SystemId);
+
+        // Real flight controller connects and reports position + home
+        byte[] aircraftInit =
+        [
+            ..EncodeV2(1, 1, 1, new HeartbeatMessage(MavType.Quadrotor, MavAutopilot.ArduPilotMega, MavModeFlag.CustomModeEnabled | MavModeFlag.SafetyArmed, 4u, MavState.Active)),
+            ..EncodeV2(1, 1, 2, new GlobalPositionIntMessage(100u, 410082376, 289783589, 120000, 40000)),
+            ..EncodeV2(1, 1, 3, new HomePositionMessage(410080000, 289780000, 80000))
+        ];
+        session.ProcessIncomingBytes(aircraftInit);
+
+        // Companion OnboardController (Generic autopilot), Camera (Generic autopilot), non-Autopilot1 component on sysId=1,
+        // and invalid-autopilot AntennaTracker must NOT trigger a vehicle swap or wipe telemetry
+        byte[] postLockAux =
+        [
+            ..EncodeV2(1, 100, 2, new HeartbeatMessage(MavType.OnboardController, MavAutopilot.Generic, MavModeFlag.None, 0u, MavState.Active)),
+            ..EncodeV2(1, 154, 3, new HeartbeatMessage(MavType.Camera, MavAutopilot.Generic, MavModeFlag.None, 0u, MavState.Active)),
+            ..EncodeV2(1, 191, 4, new HeartbeatMessage(MavType.Generic, MavAutopilot.Generic, MavModeFlag.None, 0u, MavState.Active)),
+            ..EncodeV2(3, 1, 2, new HeartbeatMessage(MavType.AntennaTracker, MavAutopilot.Invalid, MavModeFlag.None, 0u, MavState.Active))
+        ];
+        session.ProcessIncomingBytes(postLockAux);
+
+        TelemetrySnapshot cur = session.Current;
+        Assert.Equal((byte)1, cur.SystemId);
+        Assert.Equal((byte)1, cur.ComponentId);
+        Assert.Equal(MavType.Quadrotor, cur.VehicleType);
+        Assert.Equal(MavAutopilot.ArduPilotMega, cur.Autopilot);
+        Assert.Equal(VehicleCategory.Multirotor, cur.VehicleCategory);
+        Assert.Equal("GUIDED", cur.ModeName);
+        Assert.True(cur.IsArmed);
+        Assert.True(cur.HasHome);
+        Assert.Equal(41.0082376, cur.Latitude, 7);
+    }
+
+    [Fact]
+    public void Session_IgnoresForeignStatusTextAndCommandAckFromOtherSystemIds()
+    {
+        var session = new VehicleSession();
+        var statuses = new List<StatusTextMessage>();
+        var acks = new List<MavlinkFrame>();
+
+        session.Bus.StatusTextReceived += statuses.Add;
+        session.Bus.CommandAckReceived += acks.Add;
+
+        byte[] hb = EncodeV2(1, 1, 1, new HeartbeatMessage(
+            MavType.Quadrotor, MavAutopilot.ArduPilotMega, MavModeFlag.CustomModeEnabled, 5u, MavState.Active));
+
+        // Foreign system (sysId=2) STATUSTEXT and COMMAND_ACK must be filtered out
+        byte[] foreignStatus = EncodeV2(2, 1, 1, new StatusTextMessage(MavSeverity.Critical, "FOREIGN FAILSAFE"));
+        byte[] foreignAck = EncodeV2(2, 1, 2, new CommandAckMessage(MavCmd.NavReturnToLaunch, MavResult.Denied));
+
+        // Active vehicle (sysId=1) companion STATUSTEXT and autopilot COMMAND_ACK must be delivered
+        byte[] localCompanionStatus = EncodeV2(1, 100, 1, new StatusTextMessage(MavSeverity.Info, "COMPANION READY"));
+        byte[] localAck = EncodeV2(1, 1, 2, new CommandAckMessage(MavCmd.ComponentArmDisarm, MavResult.Accepted));
+
+        session.ProcessIncomingBytes([..hb, ..foreignStatus, ..foreignAck, ..localCompanionStatus, ..localAck]);
+
+        StatusTextMessage receivedStatus = Assert.Single(statuses);
+        Assert.Equal("COMPANION READY", receivedStatus.Text);
+
+        MavlinkFrame receivedAck = Assert.Single(acks);
+        Assert.Equal((byte)1, receivedAck.SystemId);
+        Assert.Equal(MavCmd.ComponentArmDisarm, CommandAckMessage.Decode(receivedAck).Command);
+    }
 }

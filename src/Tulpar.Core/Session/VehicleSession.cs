@@ -89,7 +89,8 @@ public sealed class VehicleSession
                     continue;
                 }
 
-                if (frame.SystemId == GcsSystemId)
+                // Require an identified vehicle HEARTBEAT first and ignore frames from GCS or unrelated system IDs.
+                if (_current.SystemId == 0 || frame.SystemId == GcsSystemId || frame.SystemId != _current.SystemId)
                 {
                     continue;
                 }
@@ -103,12 +104,6 @@ public sealed class VehicleSession
                 if (frame.MessageId == CommandAckMessage.MsgId)
                 {
                     pendingEvents.Add(BusEvent.Ack(frame));
-                    continue;
-                }
-
-                // Ignore telemetry from unrelated system IDs once a vehicle is identified.
-                if (_current.SystemId != 0 && frame.SystemId != _current.SystemId)
-                {
                     continue;
                 }
 
@@ -229,12 +224,17 @@ public sealed class VehicleSession
 
     private bool IsVehicleHeartbeat(MavlinkFrame frame, HeartbeatMessage hb)
     {
-        if (hb.Type == MavType.Gcs || frame.SystemId == GcsSystemId)
+        if (frame.SystemId == 0 || frame.SystemId == GcsSystemId || hb.Type == MavType.Gcs)
         {
             return false;
         }
 
-        if (IsAuxiliaryComponentType(hb.Type) && hb.Autopilot == MavAutopilot.Invalid)
+        if (IsAuxiliaryComponentType(hb.Type))
+        {
+            return false;
+        }
+
+        if (hb.Type == MavType.AntennaTracker && hb.Autopilot == MavAutopilot.Invalid)
         {
             return false;
         }
@@ -242,8 +242,7 @@ public sealed class VehicleSession
         // Do not let non-autopilot components on the same vehicle overwrite the active flight controller.
         if (_current.SystemId == frame.SystemId &&
             _current.ComponentId == (byte)MavComponent.Autopilot1 &&
-            frame.ComponentId != (byte)MavComponent.Autopilot1 &&
-            hb.Autopilot == MavAutopilot.Invalid)
+            frame.ComponentId != (byte)MavComponent.Autopilot1)
         {
             return false;
         }
