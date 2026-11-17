@@ -977,7 +977,7 @@ public sealed class MainViewModel : INotifyPropertyChanged, IAsyncDisposable
         }
 
         IVehicleProfile profile = ActiveProfile ?? VehicleProfileFactory.Create(Snapshot.VehicleType, Snapshot.Autopilot);
-        float effectiveAlt = SafetyCommandBuilder.ResolveSafeGuidedAltitude(profile, Snapshot, altMeters);
+        float effectiveAlt = SafetyCommandBuilder.ResolveSafeGuidedAltitude(profile, Snapshot, altMeters, GuidedDefaultAltitudeMeters);
         PendingSafetyAction = new SafetyActionRequest(
             SafetyActionKind.GuidedFlyHere,
             "GUIDED YÖNLENDİRME ONAYI",

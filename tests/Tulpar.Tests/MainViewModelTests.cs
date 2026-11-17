@@ -725,6 +725,51 @@ public class MainViewModelTests
         });
     }
 
+    [Fact]
+    public async Task GuidedDefaultAltitudeMeters_AppliesToMapClickGuidedCommands_WhileEnforcingSafetyFloor()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+        await vm.ConnectAsync();
+
+        // FixedWing: operator-configured 120m applies to both RequestGuidedFlyHere and map-click guidedTarget
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.FixedWing, MavAutopilot.ArduPilotMega, 0, seq: 1));
+        vm.GuidedDefaultAltitudeMeters = 120.0;
+        vm.RequestGuidedFlyHere(39.95, 32.88);
+        Assert.Equal(120f, vm.PendingSafetyAction!.AltitudeMeters);
+        vm.CancelSafetyAction();
+
+        vm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "guidedTarget", lat = 39.95, lon = 32.88 }));
+        Assert.Equal(120f, vm.PendingSafetyAction!.AltitudeMeters);
+        vm.CancelSafetyAction();
+
+        // Below FixedWing 50m floor -> clamped to 50m
+        vm.GuidedDefaultAltitudeMeters = 5.0;
+        vm.RequestGuidedFlyHere(39.95, 32.88);
+        Assert.Equal(50f, vm.PendingSafetyAction!.AltitudeMeters);
+        vm.CancelSafetyAction();
+
+        // Multirotor below 20m floor -> clamped to 20m, or respects higher current relative altitude
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.Quadrotor, MavAutopilot.ArduPilotMega, 0, seq: 2));
+        vm.GuidedDefaultAltitudeMeters = 5.0;
+        vm.RequestGuidedFlyHere(39.95, 32.88);
+        Assert.Equal(20f, vm.PendingSafetyAction!.AltitudeMeters);
+        vm.CancelSafetyAction();
+
+        transport.EmitIncoming(EncodeGlobalPosition(1, 39.92, 32.85, relAltMeters: 80.0, seq: 3));
+        vm.GuidedDefaultAltitudeMeters = 5.0;
+        vm.RequestGuidedFlyHere(39.95, 32.88);
+        Assert.Equal(80f, vm.PendingSafetyAction!.AltitudeMeters);
+        vm.CancelSafetyAction();
+
+        // Rover (SurfaceOnlyMode) always enforces 0m even when GuidedDefaultAltitudeMeters is 120m
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.GroundRover, MavAutopilot.ArduPilotMega, 0, seq: 4));
+        vm.GuidedDefaultAltitudeMeters = 120.0;
+        vm.RequestGuidedFlyHere(39.95, 32.88);
+        Assert.Equal(0f, vm.PendingSafetyAction!.AltitudeMeters);
+        vm.CancelSafetyAction();
+    }
+
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
     {
         int count = VisualTreeHelper.GetChildrenCount(parent);
