@@ -10,4 +10,11 @@
     <PackageReference Include="Microsoft.Data.Sqlite" Version="11.0.0" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Content Include="Assets\Map\**\*">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
 </Project>

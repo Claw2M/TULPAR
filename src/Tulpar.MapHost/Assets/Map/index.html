@@ -1,0 +1,266 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <meta name="color-scheme" content="dark" />
+  <title>Tulpar Mission Map</title>
+  <link rel="stylesheet" href="./maplibre-gl.css" />
+  <style>
+    :root {
+      color-scheme: dark;
+      --canvas-night: #000000;
+      --canvas-night-soft: #0a0a0a;
+      --hairline-dark: #3a3a3f;
+      --on-primary: #ffffff;
+      --on-primary-mute: #f0f0fa;
+      --ink-mute: #8e8e93;
+      --warning-amber: #ffcc00;
+      --font-ui: "D-DIN", "Arial Narrow", Arial, Verdana, sans-serif;
+      --font-bold: "D-DIN-Bold", "D-DIN", "Arial Narrow", Arial, Verdana, sans-serif;
+    }
+
+    *, *::before, *::after {
+      box-sizing: border-box;
+    }
+
+    html, body {
+      margin: 0;
+      padding: 0;
+      width: 100%;
+      height: 100%;
+      overflow: hidden;
+      background-color: var(--canvas-night);
+      color: var(--on-primary);
+      font-family: var(--font-ui);
+      user-select: none;
+    }
+
+    #map {
+      position: absolute;
+      inset: 0;
+      background-color: var(--canvas-night);
+    }
+
+    #map.mode-crosshair .maplibregl-canvas-container {
+      cursor: crosshair;
+    }
+
+    .tulpar-hud-bar {
+      position: absolute;
+      left: 12px;
+      bottom: 12px;
+      z-index: 4;
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      padding: 6px 10px;
+      background-color: var(--canvas-night-soft);
+      border: 1px solid var(--hairline-dark);
+      border-radius: 4px;
+      font-size: 12px;
+      letter-spacing: 0.96px;
+      text-transform: uppercase;
+      font-variant-numeric: tabular-nums;
+      color: var(--on-primary-mute);
+      pointer-events: none;
+    }
+
+    .tulpar-hud-mode {
+      color: var(--on-primary);
+      font-family: var(--font-bold);
+      font-weight: 700;
+    }
+
+    .tulpar-hud-mode[data-editing="true"] {
+      color: var(--warning-amber);
+    }
+
+    .tulpar-vehicle-marker {
+      width: 36px;
+      height: 36px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      pointer-events: none;
+    }
+
+    .tulpar-vehicle-svg {
+      width: 32px;
+      height: 32px;
+      display: block;
+      transform-origin: 50% 50%;
+    }
+
+    .tulpar-home-marker {
+      width: 22px;
+      height: 22px;
+      background-color: var(--canvas-night);
+      border: 1px solid var(--on-primary);
+      border-radius: 4px;
+      color: var(--on-primary);
+      font-family: var(--font-bold);
+      font-weight: 700;
+      font-size: 12px;
+      line-height: 20px;
+      text-align: center;
+      pointer-events: none;
+    }
+
+    .tulpar-wp-marker {
+      min-width: 24px;
+      height: 24px;
+      padding: 0 5px;
+      background-color: var(--canvas-night);
+      border: 1px solid var(--on-primary);
+      border-radius: 9999px;
+      color: var(--on-primary);
+      font-family: var(--font-bold);
+      font-weight: 700;
+      font-size: 11px;
+      line-height: 22px;
+      text-align: center;
+      font-variant-numeric: tabular-nums;
+      cursor: grab;
+    }
+
+    .tulpar-wp-marker:active {
+      cursor: grabbing;
+      background-color: var(--on-primary);
+      color: var(--canvas-night);
+    }
+
+    .tulpar-fence-marker {
+      width: 14px;
+      height: 14px;
+      background-color: var(--canvas-night);
+      border: 2px solid var(--warning-amber);
+      border-radius: 2px;
+      cursor: grab;
+    }
+
+    .tulpar-fence-marker:active {
+      cursor: grabbing;
+      background-color: var(--warning-amber);
+    }
+
+    .tulpar-bounds-box {
+      position: absolute;
+      z-index: 3;
+      border: 1px dashed var(--on-primary);
+      background-color: rgba(255, 255, 255, 0.08);
+      pointer-events: none;
+      display: none;
+    }
+
+    #ctx-anchor {
+      position: fixed;
+      width: 0;
+      height: 0;
+      left: 0;
+      top: 0;
+      pointer-events: none;
+    }
+
+    #context-menu {
+      margin: 0;
+      padding: 4px;
+      min-width: 220px;
+      background-color: var(--canvas-night-soft);
+      border: 1px solid var(--hairline-dark);
+      border-radius: 4px;
+      color: var(--on-primary);
+      position: fixed;
+      inset: auto;
+    }
+
+    @supports (position-area: block-end) {
+      #context-menu:has(> [focusgroup~="menu"]) {
+        position-area: block-end span-inline-end;
+        position-try-fallbacks: flip-block, flip-inline, flip-block flip-inline;
+        inset: auto;
+      }
+    }
+
+    [focusgroup~="menu"] {
+      display: flex;
+      flex-direction: column;
+      gap: 2px;
+    }
+
+    [focusgroup~="menu"] > button {
+      appearance: none;
+      background: transparent;
+      border: 0;
+      border-radius: 2px;
+      color: var(--on-primary);
+      font-family: var(--font-ui);
+      font-size: 12px;
+      font-weight: 700;
+      letter-spacing: 0.96px;
+      text-transform: uppercase;
+      text-align: left;
+      padding: 8px 10px;
+      cursor: pointer;
+    }
+
+    [focusgroup~="menu"] > button:hover,
+    [focusgroup~="menu"] > button:focus-visible {
+      background-color: var(--on-primary);
+      color: var(--canvas-night);
+      outline: none;
+    }
+
+    [focusgroup~="menu"] > hr {
+      border: 0;
+      border-top: 1px solid var(--hairline-dark);
+      margin: 4px 0;
+      width: 100%;
+    }
+
+    .maplibregl-ctrl-group {
+      background-color: var(--canvas-night-soft);
+      border: 1px solid var(--hairline-dark);
+      border-radius: 4px;
+      box-shadow: none;
+    }
+
+    .maplibregl-ctrl-group button + button {
+      border-top: 1px solid var(--hairline-dark);
+    }
+
+    .maplibregl-ctrl-group button .maplibregl-ctrl-icon {
+      filter: invert(1);
+    }
+
+    .maplibregl-ctrl-attrib {
+      background-color: rgba(10, 10, 10, 0.78);
+      color: var(--ink-mute);
+      font-size: 10px;
+    }
+  </style>
+</head>
+<body>
+  <div id="map" aria-label="Taktik Harita"></div>
+  <div id="bounds-box" class="tulpar-bounds-box" aria-hidden="true"></div>
+
+  <div class="tulpar-hud-bar" aria-live="polite">
+    <span id="hud-mode" class="tulpar-hud-mode" data-editing="false">İZLEME</span>
+    <span id="hud-coords">39.933400, 32.859700 · Z6.0</span>
+  </div>
+
+  <div id="ctx-anchor" aria-hidden="true"></div>
+  <div id="context-menu" popover="auto">
+    <div focusgroup="menu nomemory" aria-label="Harita Komutları">
+      <button type="button" data-action="guided">BURAYA GİT (GUIDED)</button>
+      <button type="button" data-action="mission-add">GÖREV NOKTASI EKLE</button>
+      <button type="button" data-action="fence-add">GEOFENCE KÖŞESİ EKLE</button>
+      <hr />
+      <button type="button" data-action="center-vehicle">ARACA ODAKLAN</button>
+    </div>
+  </div>
+
+  <script src="./maplibre-gl.js"></script>
+  <script src="./map.js"></script>
+</body>
+</html>
