@@ -1,5 +1,8 @@
 <ResourceDictionary xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
-                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml">
+                    xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+                    xmlns:themes="clr-namespace:Tulpar.App.Themes">
+
+    <themes:UppercaseContentConverter x:Key="UppercaseContentConverter" />
 
     <!-- SpaceX Design System Color Tokens (DESIGN-spacex.md + Flight Safety Alerts) -->
     <Color x:Key="CanvasNightColor">#000000</Color>
@@ -64,7 +67,11 @@
                             CornerRadius="32"
                             Padding="{TemplateBinding Padding}"
                             SnapsToDevicePixels="True">
-                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                        <ContentPresenter Content="{Binding Content, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource UppercaseContentConverter}}"
+                                          ContentTemplate="{TemplateBinding ContentTemplate}"
+                                          ContentTemplateSelector="{TemplateBinding ContentTemplateSelector}"
+                                          ContentStringFormat="{TemplateBinding ContentStringFormat}"
+                                          HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
                                           VerticalAlignment="{TemplateBinding VerticalContentAlignment}"
                                           RecognizesAccessKey="True" />
                     </Border>

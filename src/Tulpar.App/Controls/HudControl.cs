@@ -43,7 +43,6 @@ public sealed class HudControl : FrameworkElement
     private static readonly Pen MuteVectorPen = CreateFrozenPen(OnPrimaryMuteBrush, 1.5);
     private static readonly Pen MuteDashedPen = CreateFrozenDashedPen(OnPrimaryMuteBrush, 1.5);
     private static readonly Pen HazardPen = CreateFrozenPen(HazardRedBrush, 1.5);
-    private static readonly Pen WarningPen = CreateFrozenPen(WarningAmberBrush, 1.0);
 
     private static readonly FontFamily InstrumentFontFamily = CreateInstrumentFontFamily();
     private static readonly Typeface RegularTypeface = new(InstrumentFontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
@@ -152,19 +151,6 @@ public sealed class HudControl : FrameworkElement
         if (state.ShowHorizon)
         {
             DrawArtificialHorizon(dc, centerRect, state, dpi);
-        }
-
-        if (state.ShowVtolTransition)
-        {
-            DrawBadgeBox(
-                dc,
-                new Point(centerRect.Left + 6.0, centerRect.Top + 6.0),
-                42.0,
-                16.0,
-                "VTOL",
-                WarningAmberBrush,
-                WarningPen,
-                dpi);
         }
     }
 
@@ -421,46 +407,79 @@ public sealed class HudControl : FrameworkElement
 
     private static void DrawSurfaceInstrumentLayout(DrawingContext dc, Rect area, HudRenderState state, double dpi)
     {
-        double tiltBarH = 30.0;
-        double speedPanelW = Math.Clamp(area.Width * 0.28, 76.0, 108.0);
-        Rect speedRect = new(area.Left, area.Top, speedPanelW, Math.Max(40.0, area.Height - tiltBarH - 6.0));
+        bool isCompact = area.Height < 110.0 || area.Width < 240.0;
+        double tiltBarH = isCompact ? 24.0 : 30.0;
+        double panelH = Math.Max(36.0, area.Height - tiltBarH - 6.0);
+        double speedPanelW = Math.Clamp(area.Width * 0.28, isCompact ? 62.0 : 76.0, 108.0);
+        Rect speedRect = new(area.Left, area.Top, speedPanelW, panelH);
         Rect roseArea = new(
             speedRect.Right + 8.0,
             area.Top,
             Math.Max(60.0, area.Width - speedPanelW - 8.0),
-            Math.Max(40.0, area.Height - tiltBarH - 6.0));
+            panelH);
         Rect tiltRect = new(area.Left, area.Bottom - tiltBarH, area.Width, tiltBarH);
 
         // Ground / water speed readout panel (left)
         dc.DrawRoundedRectangle(CanvasNightSoftBrush, HairlinePen, speedRect, 4.0, 4.0);
-        FormattedText gsTitle = CreateText("SOG / GS", 9.0, OnPrimaryMuteBrush, true, dpi);
-        dc.DrawText(gsTitle, new Point(speedRect.Left + 8.0, speedRect.Top + 6.0));
+        dc.PushClip(new RectangleGeometry(speedRect));
 
-        FormattedText gsValue = CreateText(state.GroundspeedMps.ToString("0.0", CultureInfo.InvariantCulture), 20.0, OnPrimaryBrush, true, dpi);
-        double valY = speedRect.Top + (speedRect.Height - gsValue.Height) / 2.0;
+        double titlePadTop = isCompact ? 3.0 : 6.0;
+        FormattedText gsTitle = CreateText(isCompact ? "GS" : "SOG / GS", isCompact ? 7.5 : 9.0, OnPrimaryMuteBrush, true, dpi);
+        dc.DrawText(gsTitle, new Point(speedRect.Left + (isCompact ? 6.0 : 8.0), speedRect.Top + titlePadTop));
+
+        bool showKmhSubline = !isCompact && speedRect.Height >= 92.0;
+        double kmhMargin = showKmhSubline ? 18.0 : 3.0;
+        double bandTop = speedRect.Top + titlePadTop + gsTitle.Height + 1.0;
+        double bandBottom = speedRect.Bottom - kmhMargin;
+
+        FormattedText gsValue = CreateText(
+            state.GroundspeedMps.ToString("0.0", CultureInfo.InvariantCulture),
+            isCompact ? 13.0 : 20.0,
+            OnPrimaryBrush,
+            true,
+            dpi);
+        FormattedText unitFt = CreateText("M/S", isCompact ? 7.0 : 9.0, OnPrimaryMuteBrush, false, dpi);
+
+        double blockHeight = gsValue.Height + unitFt.Height - 1.0;
+        double valY = Math.Max(bandTop, bandTop + (bandBottom - bandTop - blockHeight) / 2.0);
         dc.DrawText(gsValue, new Point(speedRect.Left + (speedRect.Width - gsValue.Width) / 2.0, valY));
 
-        FormattedText unitFt = CreateText("M/S", 9.0, OnPrimaryMuteBrush, false, dpi);
-        dc.DrawText(unitFt, new Point(speedRect.Left + (speedRect.Width - unitFt.Width) / 2.0, valY + gsValue.Height));
+        double unitY = valY + gsValue.Height - 1.0;
+        if (unitY + unitFt.Height <= speedRect.Bottom - 1.0)
+        {
+            dc.DrawText(unitFt, new Point(speedRect.Left + (speedRect.Width - unitFt.Width) / 2.0, unitY));
+        }
 
-        double kmh = state.GroundspeedMps * 3.6;
-        FormattedText kmhFt = CreateText($"{kmh.ToString("0.0", CultureInfo.InvariantCulture)} KM/H", 8.5, InkMuteBrush, false, dpi);
-        dc.DrawText(kmhFt, new Point(speedRect.Left + 8.0, speedRect.Bottom - kmhFt.Height - 6.0));
+        if (showKmhSubline)
+        {
+            double kmh = state.GroundspeedMps * 3.6;
+            FormattedText kmhFt = CreateText($"{kmh.ToString("0.0", CultureInfo.InvariantCulture)} KM/H", 8.5, InkMuteBrush, false, dpi);
+            dc.DrawText(kmhFt, new Point(speedRect.Left + 8.0, speedRect.Bottom - kmhFt.Height - 6.0));
+        }
+
+        dc.Pop();
 
         // 360-degree compass rose & heading vector (right/center)
         dc.DrawRoundedRectangle(CanvasNightSoftBrush, HairlinePen, roseArea, 4.0, 4.0);
-        FormattedText roseLabel = CreateText("HDG ROSE", 8.5, OnPrimaryMuteBrush, true, dpi);
-        dc.DrawText(roseLabel, new Point(roseArea.Left + 8.0, roseArea.Top + 6.0));
+        dc.PushClip(new RectangleGeometry(roseArea));
+
+        FormattedText roseLabel = CreateText(isCompact ? "HDG" : "HDG ROSE", isCompact ? 7.5 : 8.5, OnPrimaryMuteBrush, true, dpi);
+        dc.DrawText(roseLabel, new Point(roseArea.Left + (isCompact ? 6.0 : 8.0), roseArea.Top + (isCompact ? 4.0 : 6.0)));
+
         double cx = roseArea.Left + roseArea.Width / 2.0;
         double cy = roseArea.Top + roseArea.Height / 2.0;
-        double radius = Math.Max(18.0, Math.Min(roseArea.Width, roseArea.Height) * 0.33);
+        double cardFontSize = isCompact ? 7.5 : 9.0;
+        double cardOffset = isCompact ? 6.5 : 9.0;
+        double labelClearance = cardOffset + cardFontSize * 0.75 + 2.0;
+        double maxRadiusFromBounds = Math.Max(8.0, Math.Min(roseArea.Width, roseArea.Height) * 0.5 - labelClearance);
+        double radius = Math.Min(Math.Min(roseArea.Width, roseArea.Height) * 0.32, maxRadiusFromBounds);
 
         dc.DrawEllipse(null, HairlinePen, new Point(cx, cy), radius, radius);
         for (int deg = 0; deg < 360; deg += 15)
         {
             double rad = (deg - 90.0) * (Math.PI / 180.0);
             bool cardinal = deg % 90 == 0;
-            double tickLen = cardinal ? 7.0 : (deg % 45 == 0 ? 5.0 : 3.0);
+            double tickLen = cardinal ? (isCompact ? 5.0 : 7.0) : (deg % 45 == 0 ? 4.0 : 2.5);
             Point outer = new(cx + radius * Math.Cos(rad), cy + radius * Math.Sin(rad));
             Point inner = new(cx + (radius - tickLen) * Math.Cos(rad), cy + (radius - tickLen) * Math.Sin(rad));
             dc.DrawLine(cardinal ? PrimaryThinPen : HairlinePen, inner, outer);
@@ -468,48 +487,50 @@ public sealed class HudControl : FrameworkElement
             if (cardinal)
             {
                 string cardLabel = FormatHeadingTickLabel(deg);
-                FormattedText cardFt = CreateText(cardLabel, 9.0, OnPrimaryMuteBrush, true, dpi);
+                FormattedText cardFt = CreateText(cardLabel, cardFontSize, OnPrimaryMuteBrush, true, dpi);
                 Point lblPos = new(
-                    cx + (radius + 9.0) * Math.Cos(rad) - cardFt.Width / 2.0,
-                    cy + (radius + 9.0) * Math.Sin(rad) - cardFt.Height / 2.0);
+                    cx + (radius + cardOffset) * Math.Cos(rad) - cardFt.Width / 2.0,
+                    cy + (radius + cardOffset) * Math.Sin(rad) - cardFt.Height / 2.0);
                 dc.DrawText(cardFt, lblPos);
             }
         }
 
         // Heading vector arrow pointing toward NormalizeHeading(state.HeadingDeg)
         double hdgRad = (state.HeadingDeg - 90.0) * (Math.PI / 180.0);
-        double tipLen = radius - 8.0;
+        double tipLen = Math.Max(4.0, radius - (isCompact ? 5.0 : 8.0));
         Point arrowTip = new(cx + tipLen * Math.Cos(hdgRad), cy + tipLen * Math.Sin(hdgRad));
         Point arrowTail = new(cx - (tipLen * 0.45) * Math.Cos(hdgRad), cy - (tipLen * 0.45) * Math.Sin(hdgRad));
         dc.DrawLine(PrimaryVectorPen, arrowTail, arrowTip);
 
+        double headSize = isCompact ? 5.0 : 7.0;
         Point headLeft = new(
-            arrowTip.X - 7.0 * Math.Cos(hdgRad - 0.45),
-            arrowTip.Y - 7.0 * Math.Sin(hdgRad - 0.45));
+            arrowTip.X - headSize * Math.Cos(hdgRad - 0.45),
+            arrowTip.Y - headSize * Math.Sin(hdgRad - 0.45));
         Point headRight = new(
-            arrowTip.X - 7.0 * Math.Cos(hdgRad + 0.45),
-            arrowTip.Y - 7.0 * Math.Sin(hdgRad + 0.45));
+            arrowTip.X - headSize * Math.Cos(hdgRad + 0.45),
+            arrowTip.Y - headSize * Math.Sin(hdgRad + 0.45));
         dc.DrawLine(PrimaryVectorPen, arrowTip, headLeft);
         dc.DrawLine(PrimaryVectorPen, arrowTip, headRight);
-        dc.DrawEllipse(OnPrimaryBrush, null, new Point(cx, cy), 2.5, 2.5);
+        dc.DrawEllipse(OnPrimaryBrush, null, new Point(cx, cy), isCompact ? 2.0 : 2.5, isCompact ? 2.0 : 2.5);
+        dc.Pop();
 
         // Side-tilt / roll bar (bottom inclinometer)
         dc.DrawRoundedRectangle(CanvasNightSoftBrush, HairlinePen, tiltRect, 4.0, 4.0);
-        FormattedText tiltLabel = CreateText("SIDE TILT", 8.5, OnPrimaryMuteBrush, true, dpi);
+        FormattedText tiltLabel = CreateText(isCompact ? "TILT" : "SIDE TILT", isCompact ? 7.5 : 8.5, OnPrimaryMuteBrush, true, dpi);
         dc.DrawText(tiltLabel, new Point(tiltRect.Left + 8.0, tiltRect.Top + (tiltRect.Height - tiltLabel.Height) / 2.0));
 
         string rollSign = state.RollDeg >= 0 ? "+" : string.Empty;
-        FormattedText tiltVal = CreateText($"{rollSign}{state.RollDeg.ToString("0.0", CultureInfo.InvariantCulture)}°", 9.5, OnPrimaryBrush, true, dpi);
+        FormattedText tiltVal = CreateText($"{rollSign}{state.RollDeg.ToString("0.0", CultureInfo.InvariantCulture)}°", isCompact ? 8.5 : 9.5, OnPrimaryBrush, true, dpi);
         dc.DrawText(tiltVal, new Point(tiltRect.Right - tiltVal.Width - 8.0, tiltRect.Top + (tiltRect.Height - tiltVal.Height) / 2.0));
 
-        double trackLeft = tiltRect.Left + tiltLabel.Width + 18.0;
-        double trackRight = tiltRect.Right - tiltVal.Width - 18.0;
-        if (trackRight - trackLeft > 30.0)
+        double trackLeft = tiltRect.Left + tiltLabel.Width + 14.0;
+        double trackRight = tiltRect.Right - tiltVal.Width - 14.0;
+        if (trackRight - trackLeft > 24.0)
         {
             double trackMidX = (trackLeft + trackRight) / 2.0;
             double trackY = tiltRect.Top + tiltRect.Height / 2.0;
             dc.DrawLine(HairlinePen, new Point(trackLeft, trackY), new Point(trackRight, trackY));
-            dc.DrawLine(PrimaryThinPen, new Point(trackMidX, trackY - 5.0), new Point(trackMidX, trackY + 5.0));
+            dc.DrawLine(PrimaryThinPen, new Point(trackMidX, trackY - 4.5), new Point(trackMidX, trackY + 4.5));
 
             double normalizedTilt = Math.Clamp(state.RollDeg, -45.0, 45.0) / 45.0;
             double markerX = trackMidX + normalizedTilt * ((trackRight - trackLeft) * 0.48);
@@ -517,33 +538,55 @@ public sealed class HudControl : FrameworkElement
             dc.DrawRectangle(
                 excessiveTilt ? WarningAmberBrush : OnPrimaryBrush,
                 null,
-                new Rect(markerX - 3.0, trackY - 6.0, 6.0, 12.0));
+                new Rect(markerX - 3.0, trackY - 5.5, 6.0, 11.0));
         }
     }
 
     private static void DrawCornerBadges(DrawingContext dc, double w, double h, double pad, HudRenderState state, double dpi)
     {
-        // Top-left: Vehicle label
-        FormattedText vehicleFt = CreateText(state.VehicleLabel, 9.5, OnPrimaryMuteBrush, true, dpi);
-        dc.DrawText(vehicleFt, new Point(pad + 2.0, pad + 2.0));
+        bool isCompact = w < 250.0;
+        double badgeFontSize = isCompact ? 8.5 : 9.5;
 
-        // Top-right: Flight mode badge
-        FormattedText modeFt = CreateText(state.ModeName, 9.5, OnPrimaryBrush, true, dpi);
-        double modeW = Math.Max(46.0, modeFt.Width + 12.0);
-        DrawBadgeBox(dc, new Point(w - pad - modeW, pad), modeW, 18.0, state.ModeName, OnPrimaryBrush, HairlinePen, dpi);
+        // Top-right: Flight mode badge (constrained width)
+        FormattedText modeFt = CreateText(state.ModeName, badgeFontSize, OnPrimaryBrush, true, dpi);
+        double maxModeW = Math.Max(42.0, w * 0.44);
+        double modeW = Math.Clamp(modeFt.Width + 10.0, 42.0, maxModeW);
+        DrawBadgeBox(dc, new Point(w - pad - modeW, pad), modeW, 18.0, state.ModeName, OnPrimaryBrush, HairlinePen, dpi, badgeFontSize);
+
+        // Top-left: Vehicle label (trimmed with ellipsis so it never collides with ModeName)
+        double maxVehicleW = Math.Max(20.0, (w - pad - modeW) - (pad + 2.0) - 8.0);
+        FormattedText vehicleFt = CreateConstrainedText(state.VehicleLabel, badgeFontSize, OnPrimaryMuteBrush, true, maxVehicleW, dpi);
+        dc.DrawText(vehicleFt, new Point(pad + 2.0, pad + 2.0));
 
         // Bottom-left: ARMED (HazardRed) vs DISARMED (InkMute)
         string armText = state.IsArmed ? "ARMED" : "DISARMED";
+        double armW = isCompact ? 54.0 : 66.0;
         Brush armBrush = state.IsArmed ? HazardRedBrush : InkMuteBrush;
         Pen armPen = state.IsArmed ? HazardPen : HairlinePen;
-        DrawBadgeBox(dc, new Point(pad, h - pad - 18.0), 66.0, 18.0, armText, armBrush, armPen, dpi);
+        DrawBadgeBox(dc, new Point(pad, h - pad - 18.0), armW, 18.0, armText, armBrush, armPen, dpi, badgeFontSize);
 
         // Bottom-right: Attitude or Surface status
         string rightStatus = state.SurfaceOnlyMode
             ? "SURFACE"
             : $"P {(state.PitchDeg >= 0 ? "+" : string.Empty)}{state.PitchDeg.ToString("0", CultureInfo.InvariantCulture)}°  R {(state.RollDeg >= 0 ? "+" : string.Empty)}{state.RollDeg.ToString("0", CultureInfo.InvariantCulture)}°";
-        FormattedText statusFt = CreateText(rightStatus, 9.0, OnPrimaryMuteBrush, false, dpi);
-        dc.DrawText(statusFt, new Point(w - pad - statusFt.Width - 2.0, h - pad - statusFt.Height - 2.0));
+        double maxStatusW = Math.Max(24.0, w - pad * 2.0 - armW - 8.0);
+        FormattedText statusFt = CreateConstrainedText(rightStatus, isCompact ? 8.0 : 9.0, OnPrimaryMuteBrush, false, maxStatusW, dpi);
+        double statusX = w - pad - statusFt.Width - 2.0;
+        dc.DrawText(statusFt, new Point(statusX, h - pad - statusFt.Height - 2.0));
+
+        // Bottom-center: Monochrome VTOL transition badge (strictly monochrome, never overlaps roll arc)
+        if (state.ShowVtolTransition && !state.SurfaceOnlyMode)
+        {
+            double gapLeft = pad + armW + 4.0;
+            double gapRight = statusX - 4.0;
+            double gap = gapRight - gapLeft;
+            if (gap >= 34.0)
+            {
+                double vtolW = Math.Min(42.0, gap);
+                double vtolX = gapLeft + (gap - vtolW) / 2.0;
+                DrawBadgeBox(dc, new Point(vtolX, h - pad - 17.0), vtolW, 16.0, "VTOL", OnPrimaryMuteBrush, HairlinePen, dpi, isCompact ? 8.0 : 8.5);
+            }
+        }
     }
 
     private static void DrawLinkLostBanner(DrawingContext dc, double w, double h, double dpi)
@@ -565,12 +608,28 @@ public sealed class HudControl : FrameworkElement
         string text,
         Brush foreground,
         Pen borderPen,
-        double dpi)
+        double dpi,
+        double fontSize = 9.5)
     {
         Rect box = new(topLeft.X, topLeft.Y, width, height);
         dc.DrawRoundedRectangle(CanvasNightBrush, borderPen, box, 4.0, 4.0);
-        FormattedText ft = CreateText(text, 9.5, foreground, true, dpi);
+        FormattedText ft = CreateConstrainedText(text, fontSize, foreground, true, Math.Max(8.0, width - 6.0), dpi);
         dc.DrawText(ft, new Point(box.Left + (box.Width - ft.Width) / 2.0, box.Top + (box.Height - ft.Height) / 2.0));
+    }
+
+    private static FormattedText CreateConstrainedText(
+        string text,
+        double fontSize,
+        Brush brush,
+        bool bold,
+        double maxWidth,
+        double dpi)
+    {
+        FormattedText ft = CreateText(text, fontSize, brush, bold, dpi);
+        ft.MaxTextWidth = maxWidth;
+        ft.MaxLineCount = 1;
+        ft.Trimming = TextTrimming.CharacterEllipsis;
+        return ft;
     }
 
     private static string FormatHeadingTickLabel(int degInt) =>

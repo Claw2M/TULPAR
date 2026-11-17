@@ -195,8 +195,8 @@ public class HudModelTests
             var displayTextStyle = Assert.IsType<Style>(theme["DisplayTelemetryTextStyle"]);
             var panelStyle = Assert.IsType<Style>(theme["HairlinePanelStyle"]);
 
-            var button = new Button { Style = ghostBtnStyle, Content = "CONNECT" };
-            var dangerButton = new Button { Style = dangerBtnStyle, Content = "RTL" };
+            var button = new Button { Style = ghostBtnStyle, Content = "connect" };
+            var dangerButton = new Button { Style = dangerBtnStyle, Content = "rtl" };
             var textBox = new TextBox { Style = textBoxStyle, Text = "14550" };
             var comboBox = new ComboBox { Style = comboBoxStyle, ItemsSource = new[] { "GUIDED", "AUTO", "RTL" }, SelectedIndex = 0 };
             var microText = new TextBlock { Style = microCapStyle, Text = "TELEMETRİ" };
@@ -207,8 +207,26 @@ public class HudModelTests
             dangerButton.ApplyTemplate();
             textBox.ApplyTemplate();
             comboBox.ApplyTemplate();
+            button.Measure(new Size(140, 36));
+            button.Arrange(new Rect(0, 0, 140, 36));
+            dangerButton.Measure(new Size(140, 36));
+            dangerButton.Arrange(new Rect(0, 0, 140, 36));
             comboBox.Measure(new Size(140, 32));
             comboBox.Arrange(new Rect(0, 0, 140, 32));
+
+            ContentPresenter? buttonPresenter = FindVisualChild<ContentPresenter>(button);
+            ContentPresenter? dangerPresenter = FindVisualChild<ContentPresenter>(dangerButton);
+            Assert.NotNull(buttonPresenter);
+            Assert.NotNull(dangerPresenter);
+            Assert.Equal("CONNECT", buttonPresenter!.Content);
+            Assert.Equal("RTL", dangerPresenter!.Content);
+
+            var customContent = new StackPanel();
+            var customButton = new Button { Style = ghostBtnStyle, Content = customContent };
+            customButton.ApplyTemplate();
+            ContentPresenter? customPresenter = FindVisualChild<ContentPresenter>(customButton);
+            Assert.NotNull(customPresenter);
+            Assert.Same(customContent, customPresenter!.Content);
 
             Assert.Null(button.Effect);
             Assert.Null(dangerButton.Effect);
@@ -348,6 +366,163 @@ public class HudModelTests
             compactBitmap.Render(hud);
             Assert.Equal(220, compactBitmap.PixelWidth);
         });
+    }
+
+    [Fact]
+    public void HudControl_Compact220x180AndVtolBadge_UsesMonochromeOnlyAndAvoidsClipOverflows()
+    {
+        RunOnStaThread(() =>
+        {
+            var vtolHud = new HudControl { Width = 220, Height = 180 };
+            vtolHud.Snapshot = new TelemetrySnapshot(
+                IsConnected: true,
+                LinkLost: false,
+                VehicleDisplayLabel: "TULPAR HYBRID VTOL AIRFRAME",
+                VehicleCategory: VehicleCategory.Vtol,
+                ModeName: "AUTO_MISSION",
+                IsArmed: false,
+                AirspeedMps: 18.5,
+                GroundspeedMps: 16.0,
+                AltitudeRelativeMeters: 85.0,
+                VerticalSpeedMps: 0.8,
+                HeadingDeg: 358.0,
+                RollDeg: 3.0,
+                PitchDeg: 2.0);
+            vtolHud.VehicleProfile = new VtolProfile();
+            vtolHud.Measure(new Size(220, 180));
+            vtolHud.Arrange(new Rect(0, 0, 220, 180));
+
+            var vtolBitmap = new RenderTargetBitmap(220, 180, 96, 96, PixelFormats.Pbgra32);
+            vtolBitmap.Render(vtolHud);
+
+            byte[] pixels = new byte[220 * 180 * 4];
+            vtolBitmap.CopyPixels(pixels, 220 * 4, 0);
+
+            bool hasAmberOrRed = false;
+            for (int i = 0; i < pixels.Length; i += 4)
+            {
+                byte b = pixels[i];
+                byte g = pixels[i + 1];
+                byte r = pixels[i + 2];
+                // Detect any amber (#FFCC00) or hazard red (#FF3B30) pixel when no alert is active
+                if (r > 180 && (g < 80 || b < 40))
+                {
+                    hasAmberOrRed = true;
+                    break;
+                }
+            }
+
+            Assert.False(hasAmberOrRed);
+
+            // Top header text boxes (VehicleLabel vs ModeName) must never horizontally overlap at 220px width
+            var vtolGlyphBounds = CollectGlyphBounds(VisualTreeHelper.GetDrawing(vtolHud))
+                .Where(b => b.Top < 28.0)
+                .OrderBy(b => b.Left)
+                .ToList();
+            Assert.True(vtolGlyphBounds.Count >= 2);
+            for (int i = 1; i < vtolGlyphBounds.Count; i++)
+            {
+                Assert.True(
+                    vtolGlyphBounds[i - 1].Right <= vtolGlyphBounds[i].Left,
+                    $"Top header text overlap at 220x180: {vtolGlyphBounds[i - 1]} vs {vtolGlyphBounds[i]}");
+            }
+
+            // Compact surface-only layout (220x180 and 180x160) must render cleanly without overlap or overflow
+            var surfaceHud = new HudControl { Width = 220, Height = 180 };
+            surfaceHud.Snapshot = new TelemetrySnapshot(
+                IsConnected: true,
+                LinkLost: false,
+                VehicleDisplayLabel: "İDA / YÜZEY PLATFORMU",
+                VehicleCategory: VehicleCategory.BoatIda,
+                ModeName: "STEERING",
+                IsArmed: false,
+                GroundspeedMps: 7.2,
+                HeadingDeg: 45.0,
+                RollDeg: -8.0);
+            surfaceHud.VehicleProfile = new BoatIdaProfile();
+            surfaceHud.Measure(new Size(220, 180));
+            surfaceHud.Arrange(new Rect(0, 0, 220, 180));
+
+            var surfaceBitmap = new RenderTargetBitmap(220, 180, 96, 96, PixelFormats.Pbgra32);
+            surfaceBitmap.Render(surfaceHud);
+            Assert.Equal(220, surfaceBitmap.PixelWidth);
+
+            List<Rect> surfaceGlyphs = CollectGlyphBounds(VisualTreeHelper.GetDrawing(surfaceHud));
+
+            // Speed card labels at 220x180 (x < 70, y in instrument panel [58..118]) must not overlap vertically
+            var speedCardGlyphs = surfaceGlyphs
+                .Where(b => b.Left >= 8.0 && b.Right <= 72.0 && b.Top >= 58.0 && b.Bottom <= 120.0)
+                .OrderBy(b => b.Top)
+                .ToList();
+            Assert.True(speedCardGlyphs.Count >= 2);
+            for (int i = 1; i < speedCardGlyphs.Count; i++)
+            {
+                Assert.True(
+                    speedCardGlyphs[i - 1].Bottom <= speedCardGlyphs[i].Top + 0.5,
+                    $"Compact speed panel text overlap: {speedCardGlyphs[i - 1]} vs {speedCardGlyphs[i]}");
+            }
+
+            // Compass rose labels (N/E/S/W + HDG) at 220x180 must remain strictly inside roseArea [60..116]
+            var roseGlyphs = surfaceGlyphs
+                .Where(b => b.Left >= 74.0 && b.Top >= 56.0 && b.Bottom <= 122.0)
+                .ToList();
+            Assert.True(roseGlyphs.Count >= 4);
+            foreach (Rect g in roseGlyphs)
+            {
+                Assert.True(g.Top >= 60.0 && g.Bottom <= 116.0, $"Rose label overflowed roseArea: {g}");
+            }
+
+            surfaceHud.Width = 180;
+            surfaceHud.Height = 160;
+            surfaceHud.Measure(new Size(180, 160));
+            surfaceHud.Arrange(new Rect(0, 0, 180, 160));
+            var ultraCompact = new RenderTargetBitmap(180, 160, 96, 96, PixelFormats.Pbgra32);
+            ultraCompact.Render(surfaceHud);
+            Assert.Equal(180, ultraCompact.PixelWidth);
+        });
+    }
+
+    private static List<Rect> CollectGlyphBounds(Drawing? drawing)
+    {
+        var results = new List<Rect>();
+        CollectGlyphBoundsRecursive(drawing, results);
+        return results;
+    }
+
+    private static void CollectGlyphBoundsRecursive(Drawing? drawing, List<Rect> results)
+    {
+        if (drawing is GlyphRunDrawing glyph)
+        {
+            results.Add(glyph.Bounds);
+        }
+        else if (drawing is DrawingGroup group)
+        {
+            foreach (Drawing child in group.Children)
+            {
+                CollectGlyphBoundsRecursive(child, results);
+            }
+        }
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        int count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            T? nested = FindVisualChild<T>(child);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
     }
 
     private static void AssertBrushColor(ResourceDictionary dict, string key, Color expected)
