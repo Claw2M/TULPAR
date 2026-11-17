@@ -7,3 +7,4 @@ publish/
 .superpowers/
 *.db
 *.tlog
+*_wpftmp.csproj

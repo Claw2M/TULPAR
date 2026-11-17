@@ -11,6 +11,14 @@
     <PackageReference Include="VideoLAN.LibVLC.Windows" Version="3.0.24" />
   </ItemGroup>
 
+  <ItemGroup>
+    <Resource Include="Assets\Fonts\*.ttf" Condition="Exists('Assets\Fonts')" />
+    <Content Include="Assets\Fonts\OFL-1.1.txt" Condition="Exists('Assets\Fonts\OFL-1.1.txt')">
+      <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
+      <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
+    </Content>
+  </ItemGroup>
+
   <PropertyGroup>
     <OutputType>WinExe</OutputType>
     <TargetFramework>net10.0-windows</TargetFramework>
