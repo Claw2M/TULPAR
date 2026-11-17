@@ -1,5 +1,6 @@
 using System.Buffers.Binary;
 using System.Globalization;
+using System.IO.Ports;
 using System.Net;
 using System.Net.Sockets;
 using System.Text;
@@ -519,6 +520,48 @@ public class TransportAndRecorderTests
         Assert.Contains("TX write failed", reason, StringComparison.Ordinal);
         Assert.False(serial.IsConnected);
         Assert.Equal(1, disconnectCount);
+    }
+
+    [Fact]
+    public async Task SerialTransport_SystemChannel_UsesInfiniteReadTimeoutAndSurvivesIdleGap()
+    {
+        // Verify real SerialPort configuration uses InfiniteTimeout so >=500ms telemetry gaps
+        // never trigger Win32 COMMTIMEOUTS 0-byte read completion / spurious disconnects.
+        await using var realSerial = new SerialTransport(" COM99 ", 57600, dtrEnable: true, rtsEnable: true);
+        using ISerialChannel createdChannel = realSerial.ChannelFactory();
+        var systemChannel = Assert.IsType<SerialTransport.SystemSerialChannel>(createdChannel);
+        SerialPort port = systemChannel.Port;
+
+        Assert.Equal(SerialPort.InfiniteTimeout, port.ReadTimeout);
+        Assert.InRange(port.WriteTimeout, 1, 5000);
+        Assert.Equal("COM99", port.PortName);
+        Assert.Equal(57600, port.BaudRate);
+        Assert.True(port.DtrEnable);
+        Assert.True(port.RtsEnable);
+        Assert.Equal(Parity.None, port.Parity);
+        Assert.Equal(8, port.DataBits);
+        Assert.Equal(StopBits.One, port.StopBits);
+
+        // Verify background ReadAsync survives >500ms idle gap before receiving telemetry.
+        var fakeStream = new FaultablePipeStream();
+        var fakeChannel = new FakeSerialChannel(fakeStream);
+        await using var serial = new SerialTransport("COM95", 57600, () => fakeChannel);
+        var disconnectedEvents = new List<string>();
+        var receivedTcs = new TaskCompletionSource<byte[]>(TaskCreationOptions.RunContinuationsAsynchronously);
+
+        serial.Disconnected += disconnectedEvents.Add;
+        serial.DataReceived += bytes => receivedTcs.TrySetResult(bytes.ToArray());
+
+        await serial.ConnectAsync(CancellationToken.None);
+        await Task.Delay(650);
+
+        Assert.True(serial.IsConnected);
+        Assert.Empty(disconnectedEvents);
+
+        byte[] heartbeat = EncodeHeartbeat(sysId: 1, seq: 21);
+        fakeStream.EnqueueIncoming(heartbeat);
+        byte[] received = await receivedTcs.Task.WaitAsync(TimeSpan.FromSeconds(5));
+        Assert.Equal(heartbeat, received);
     }
 
     [Fact]

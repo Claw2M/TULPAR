@@ -49,6 +49,8 @@ public sealed class SerialTransport : ITransport
 
     public string EndpointDescription { get; }
 
+    internal Func<ISerialChannel> ChannelFactory => _channelFactory;
+
     public event Action<ReadOnlyMemory<byte>>? DataReceived;
 
     public event Action<string>? Disconnected;
@@ -141,7 +143,7 @@ public sealed class SerialTransport : ITransport
 
     public ValueTask DisposeAsync() => _core.DisposeAsync();
 
-    private sealed class SystemSerialChannel : ISerialChannel
+    internal sealed class SystemSerialChannel : ISerialChannel
     {
         private readonly SerialPort _port;
         private int _disposed;
@@ -153,12 +155,14 @@ public sealed class SerialTransport : ITransport
                 DtrEnable = dtrEnable,
                 RtsEnable = rtsEnable,
                 Handshake = Handshake.None,
-                ReadTimeout = 500,
+                ReadTimeout = SerialPort.InfiniteTimeout,
                 WriteTimeout = 2000,
                 ReadBufferSize = 65536,
                 WriteBufferSize = 16384
             };
         }
+
+        internal SerialPort Port => _port;
 
         public bool IsOpen => _port.IsOpen;
 
