@@ -338,4 +338,213 @@
         <Setter Property="UseLayoutRounding" Value="True" />
     </Style>
 
+    <!-- SpaceX Monochrome TabItem -->
+    <Style x:Key="SpaceXTabItemStyle" TargetType="{x:Type TabItem}">
+        <Setter Property="Background" Value="{StaticResource CanvasNightBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource InkMuteBrush}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type TabItem}">
+                    <Border x:Name="TabBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="{StaticResource HairlineDarkBrush}"
+                            BorderThickness="0,0,0,1"
+                            Padding="{TemplateBinding Padding}">
+                        <ContentPresenter ContentSource="Header"
+                                          Content="{Binding Header, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource UppercaseContentConverter}}"
+                                          HorizontalAlignment="Center"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter Property="Foreground" Value="{StaticResource OnPrimaryMuteBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="TabBorder" Property="Background" Value="{StaticResource CanvasNightSoftBrush}" />
+                            <Setter TargetName="TabBorder" Property="BorderBrush" Value="{StaticResource OnPrimaryBrush}" />
+                            <Setter TargetName="TabBorder" Property="BorderThickness" Value="0,0,0,2" />
+                            <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- SpaceX Monochrome TabControl -->
+    <Style x:Key="SpaceXTabControlStyle" TargetType="{x:Type TabControl}">
+        <Setter Property="Background" Value="{StaticResource CanvasNightSoftBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource HairlineDarkBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="Padding" Value="0" />
+        <Setter Property="ItemContainerStyle" Value="{StaticResource SpaceXTabItemStyle}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type TabControl}">
+                    <Grid KeyboardNavigation.TabNavigation="Local">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="*" />
+                        </Grid.RowDefinitions>
+                        <Border Grid.Row="0"
+                                Background="{StaticResource CanvasNightBrush}"
+                                BorderBrush="{StaticResource HairlineDarkBrush}"
+                                BorderThickness="0,1,0,1">
+                            <TabPanel x:Name="HeaderPanel"
+                                      IsItemsHost="True"
+                                      Margin="0" />
+                        </Border>
+                        <Border Grid.Row="1"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}">
+                            <ContentPresenter x:Name="PART_SelectedContentHost"
+                                              ContentSource="SelectedContent"
+                                              Margin="{TemplateBinding Padding}" />
+                        </Border>
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- SpaceX Monochrome CheckBox -->
+    <Style x:Key="SpaceXCheckBoxStyle" TargetType="{x:Type CheckBox}">
+        <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Cursor" Value="Hand" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type CheckBox}">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <Border x:Name="CheckBorder"
+                                Width="16"
+                                Height="16"
+                                Margin="0,0,8,0"
+                                Background="{StaticResource CanvasNightBrush}"
+                                BorderBrush="{StaticResource HairlineDarkBrush}"
+                                BorderThickness="1"
+                                CornerRadius="4">
+                            <Path x:Name="CheckMark"
+                                  Data="M 3,8 L 6.5,11.5 L 13,4"
+                                  Stroke="{StaticResource OnPrimaryBrush}"
+                                  StrokeThickness="1.8"
+                                  Visibility="Collapsed" />
+                        </Border>
+                        <ContentPresenter VerticalAlignment="Center"
+                                          Content="{Binding Content, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource UppercaseContentConverter}}" />
+                    </StackPanel>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsChecked" Value="True">
+                            <Setter TargetName="CheckMark" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource OnPrimaryBrush}" />
+                        </Trigger>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="CheckBorder" Property="BorderBrush" Value="{StaticResource OnPrimaryMuteBrush}" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- SpaceX Monochrome ProgressBar -->
+    <Style x:Key="SpaceXProgressBarStyle" TargetType="{x:Type ProgressBar}">
+        <Setter Property="Height" Value="6" />
+        <Setter Property="Background" Value="{StaticResource CanvasNightBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource HairlineDarkBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ProgressBar}">
+                    <Grid>
+                        <Border x:Name="PART_Track"
+                                Background="{TemplateBinding Background}"
+                                BorderBrush="{TemplateBinding BorderBrush}"
+                                BorderThickness="{TemplateBinding BorderThickness}"
+                                CornerRadius="2" />
+                        <Border x:Name="PART_Indicator"
+                                HorizontalAlignment="Left"
+                                Background="{TemplateBinding Foreground}"
+                                CornerRadius="2" />
+                    </Grid>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
+    </Style>
+
+    <!-- SpaceX Monochrome DataGrid -->
+    <Style x:Key="SpaceXDataGridColumnHeaderStyle" TargetType="{x:Type DataGridColumnHeader}">
+        <Setter Property="Background" Value="{StaticResource CanvasNightBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource OnPrimaryMuteBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource HairlineDarkBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,1,1" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
+        <Setter Property="FontSize" Value="11" />
+        <Setter Property="FontWeight" Value="Bold" />
+        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="HorizontalContentAlignment" Value="Left" />
+    </Style>
+
+    <Style x:Key="SpaceXDataGridRowStyle" TargetType="{x:Type DataGridRow}">
+        <Setter Property="Background" Value="{StaticResource CanvasNightSoftBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
+        <Setter Property="BorderThickness" Value="0" />
+        <Style.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="#1A1A1F" />
+                <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
+            </Trigger>
+            <Trigger Property="IsMouseOver" Value="True">
+                <Setter Property="Background" Value="#141418" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="SpaceXDataGridCellStyle" TargetType="{x:Type DataGridCell}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource HairlineDarkBrush}" />
+        <Setter Property="BorderThickness" Value="0,0,1,1" />
+        <Setter Property="Padding" Value="6,4" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Style.Triggers>
+            <Trigger Property="IsSelected" Value="True">
+                <Setter Property="Background" Value="#1A1A1F" />
+                <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
+            </Trigger>
+        </Style.Triggers>
+    </Style>
+
+    <Style x:Key="SpaceXDataGridStyle" TargetType="{x:Type DataGrid}">
+        <Setter Property="Background" Value="{StaticResource CanvasNightSoftBrush}" />
+        <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
+        <Setter Property="BorderBrush" Value="{StaticResource HairlineDarkBrush}" />
+        <Setter Property="BorderThickness" Value="1" />
+        <Setter Property="GridLinesVisibility" Value="All" />
+        <Setter Property="HorizontalGridLinesBrush" Value="{StaticResource HairlineDarkBrush}" />
+        <Setter Property="VerticalGridLinesBrush" Value="{StaticResource HairlineDarkBrush}" />
+        <Setter Property="HeadersVisibility" Value="Column" />
+        <Setter Property="RowHeaderWidth" Value="0" />
+        <Setter Property="AutoGenerateColumns" Value="False" />
+        <Setter Property="CanUserAddRows" Value="False" />
+        <Setter Property="CanUserDeleteRows" Value="False" />
+        <Setter Property="SelectionMode" Value="Single" />
+        <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="ColumnHeaderStyle" Value="{StaticResource SpaceXDataGridColumnHeaderStyle}" />
+        <Setter Property="RowStyle" Value="{StaticResource SpaceXDataGridRowStyle}" />
+        <Setter Property="CellStyle" Value="{StaticResource SpaceXDataGridCellStyle}" />
+    </Style>
+
 </ResourceDictionary>
