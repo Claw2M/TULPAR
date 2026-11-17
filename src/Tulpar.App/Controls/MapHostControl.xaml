@@ -40,7 +40,7 @@
                                Text="MAPLIBRE GL JS · ÇEVRİMDIŞI ÖNBELLEK MOTORU"
                                FontFamily="{DynamicResource UiFontFamily}"
                                FontSize="11"
-                               Foreground="#8E8E93"
+                               Foreground="#F0F0FA"
                                Margin="0,6,0,0"
                                HorizontalAlignment="Center"
                                TextAlignment="Center"

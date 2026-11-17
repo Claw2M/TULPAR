@@ -114,7 +114,7 @@
                     <TextBlock Text="UYARI: AÇIK SUNUCULARDA HIZ SINIRI UYGULANIR (75MS/KARO). MAKS KARO SINIRINI AŞAN ALANLAR KIRPILIR."
                                FontFamily="{DynamicResource UiFontFamily}"
                                FontSize="11"
-                               Foreground="#FFCC00"
+                               Foreground="#F0F0FA"
                                TextWrapping="Wrap"
                                Margin="0,0,0,10" />
 

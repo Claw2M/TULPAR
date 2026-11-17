@@ -52,10 +52,15 @@
 
                     <ComboBox ItemsSource="{Binding ConnectionKinds}"
                               SelectedItem="{Binding SelectedConnectionKind}"
-                              Width="84"
+                              Width="96"
                               Height="30"
                               FontSize="11"
                               Margin="0,0,6,0">
+                        <ComboBox.ItemTemplate>
+                            <DataTemplate>
+                                <TextBlock Text="{Binding Converter={StaticResource EnumDisplayConverter}}" />
+                            </DataTemplate>
+                        </ComboBox.ItemTemplate>
                         <ComboBox.Style>
                             <Style TargetType="{x:Type ComboBox}" BasedOn="{StaticResource SpaceXComboBoxStyle}">
                                 <Setter Property="IsEnabled" Value="True" />
@@ -450,7 +455,7 @@
                                         <StackPanel>
                                             <TextBlock Text="TELEMETRİ YANSITMA &amp; GUIDED AYARI" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Margin="0,0,0,8" />
                                             <CheckBox IsChecked="{Binding IsUdpForwarderEnabled}"
-                                                      Content="{Binding UdpForwarderEndpointText, StringFormat=UDP YANSITICI ({0})}"
+                                                      Content="{Binding UdpForwarderLabel}"
                                                       Style="{StaticResource SpaceXCheckBoxStyle}"
                                                       Margin="0,0,0,8" />
                                             <Grid>
@@ -551,10 +556,16 @@
                                 <ComboBox ItemsSource="{Binding VideoSourceKinds}"
                                           SelectedItem="{Binding SelectedVideoSourceKind}"
                                           Style="{StaticResource SpaceXComboBoxStyle}"
-                                          Width="112"
+                                          Width="128"
                                           Height="28"
                                           FontSize="11"
-                                          Margin="0,0,4,0" />
+                                          Margin="0,0,4,0">
+                                    <ComboBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <TextBlock Text="{Binding Converter={StaticResource EnumDisplayConverter}}" />
+                                        </DataTemplate>
+                                    </ComboBox.ItemTemplate>
+                                </ComboBox>
 
                                 <!-- URL Input (UDP/RTSP) -->
                                 <TextBox Text="{Binding VideoStreamInput, UpdateSourceTrigger=PropertyChanged}"
@@ -578,8 +589,9 @@
                                 <StackPanel Orientation="Horizontal"
                                             Visibility="{Binding IsUsbVideoSelected, Converter={StaticResource BoolToVisibility}}">
                                     <ComboBox ItemsSource="{Binding AvailableVideoDevices}"
-                                              Text="{Binding VideoStreamInput, UpdateSourceTrigger=PropertyChanged}"
+                                              Text="{Binding VideoStreamInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
                                               IsEditable="True"
+                                              IsTextSearchEnabled="False"
                                               Style="{StaticResource SpaceXComboBoxStyle}"
                                               Width="150"
                                               Height="28"

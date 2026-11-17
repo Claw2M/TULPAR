@@ -3,6 +3,7 @@
                     xmlns:themes="clr-namespace:Tulpar.App.Themes">
 
     <themes:UppercaseContentConverter x:Key="UppercaseContentConverter" />
+    <themes:EnumDisplayConverter x:Key="EnumDisplayConverter" />
 
     <!-- SpaceX Design System Color Tokens (DESIGN-spacex.md + Flight Safety Alerts) -->
     <Color x:Key="CanvasNightColor">#000000</Color>
@@ -237,8 +238,23 @@
                                     <ColumnDefinition Width="*" />
                                     <ColumnDefinition Width="26" />
                                 </Grid.ColumnDefinitions>
-                                <ToggleButton Grid.Column="0"
+                                <ToggleButton x:Name="FullAreaToggle"
+                                              Grid.Column="0"
                                               Grid.ColumnSpan="2"
+                                              Focusable="False"
+                                              ClickMode="Press"
+                                              IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
+                                              Background="Transparent"
+                                              BorderThickness="0">
+                                    <ToggleButton.Template>
+                                        <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                            <Border Background="Transparent" />
+                                        </ControlTemplate>
+                                    </ToggleButton.Template>
+                                </ToggleButton>
+                                <ToggleButton x:Name="ArrowToggle"
+                                              Grid.Column="1"
+                                              Visibility="Collapsed"
                                               Focusable="False"
                                               ClickMode="Press"
                                               IsChecked="{Binding IsDropDownOpen, Mode=TwoWay, RelativeSource={RelativeSource TemplatedParent}}"
@@ -259,6 +275,24 @@
                                                   ContentTemplate="{TemplateBinding SelectionBoxItemTemplate}"
                                                   ContentTemplateSelector="{TemplateBinding ItemTemplateSelector}"
                                                   IsHitTestVisible="False" />
+                                <TextBox x:Name="PART_EditableTextBox"
+                                         Grid.Column="0"
+                                         Margin="8,1,4,1"
+                                         Padding="0"
+                                         HorizontalAlignment="Stretch"
+                                         VerticalAlignment="Center"
+                                         VerticalContentAlignment="Center"
+                                         Background="Transparent"
+                                         Foreground="{TemplateBinding Foreground}"
+                                         FontFamily="{TemplateBinding FontFamily}"
+                                         FontSize="{TemplateBinding FontSize}"
+                                         CaretBrush="{StaticResource OnPrimaryBrush}"
+                                         SelectionBrush="{StaticResource HairlineDarkBrush}"
+                                         BorderThickness="0"
+                                         FocusVisualStyle="{x:Null}"
+                                         Focusable="True"
+                                         Visibility="Collapsed"
+                                         IsReadOnly="{TemplateBinding IsReadOnly}" />
                                 <Path Grid.Column="1"
                                       Data="M 0,0 L 4,4 L 8,0"
                                       Stroke="{TemplateBinding Foreground}"
@@ -293,6 +327,14 @@
                             </Border>
                         </Popup>
                     </Grid>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsEditable" Value="True">
+                            <Setter TargetName="ContentSite" Property="Visibility" Value="Collapsed" />
+                            <Setter TargetName="PART_EditableTextBox" Property="Visibility" Value="Visible" />
+                            <Setter TargetName="FullAreaToggle" Property="Visibility" Value="Collapsed" />
+                            <Setter TargetName="ArrowToggle" Property="Visibility" Value="Visible" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
                 </ControlTemplate>
             </Setter.Value>
         </Setter>
@@ -441,7 +483,8 @@
                                   Visibility="Collapsed" />
                         </Border>
                         <ContentPresenter VerticalAlignment="Center"
-                                          Content="{Binding Content, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource UppercaseContentConverter}}" />
+                                          Content="{Binding Content, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource UppercaseContentConverter}}"
+                                          ContentStringFormat="{TemplateBinding ContentStringFormat}" />
                     </StackPanel>
                     <ControlTemplate.Triggers>
                         <Trigger Property="IsChecked" Value="True">
@@ -502,11 +545,11 @@
         <Setter Property="BorderThickness" Value="0" />
         <Style.Triggers>
             <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="#1A1A1F" />
+                <Setter Property="Background" Value="{StaticResource HairlineDarkBrush}" />
                 <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
             </Trigger>
             <Trigger Property="IsMouseOver" Value="True">
-                <Setter Property="Background" Value="#141418" />
+                <Setter Property="Background" Value="{StaticResource CanvasNightBrush}" />
             </Trigger>
         </Style.Triggers>
     </Style>
@@ -520,7 +563,7 @@
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Style.Triggers>
             <Trigger Property="IsSelected" Value="True">
-                <Setter Property="Background" Value="#1A1A1F" />
+                <Setter Property="Background" Value="{StaticResource HairlineDarkBrush}" />
                 <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
             </Trigger>
         </Style.Triggers>

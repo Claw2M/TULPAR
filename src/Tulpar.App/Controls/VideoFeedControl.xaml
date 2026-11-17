@@ -7,134 +7,93 @@
             Background="#0A0A0A"
             BorderBrush="#3A3A3F"
             BorderThickness="1"
-            CornerRadius="8"
             SnapsToDevicePixels="True">
+        <Border.Style>
+            <Style TargetType="{x:Type Border}">
+                <Setter Property="CornerRadius" Value="8" />
+                <Style.Triggers>
+                    <DataTrigger Binding="{Binding IsCameraPrimary}" Value="True">
+                        <Setter Property="CornerRadius" Value="0" />
+                    </DataTrigger>
+                </Style.Triggers>
+            </Style>
+        </Border.Style>
         <Grid>
-            <!-- LibVLCSharp VideoView (ForegroundWindow hosts overlay controls cleanly above native video/WebView2) -->
-            <vlc:VideoView x:Name="VideoViewControl"
-                           Background="#000000"
-                           Visibility="Collapsed">
-                <Grid x:Name="ForegroundRoot" Background="{x:Null}">
-                    <!-- Idle / Fallback overlay when no stream is playing -->
-                    <Border x:Name="NativeIdleOverlay"
-                            Background="#0A0A0A"
-                            Visibility="Visible">
-                        <StackPanel VerticalAlignment="Center"
-                                    HorizontalAlignment="Center"
-                                    Margin="16">
-                            <TextBlock x:Name="NativeOverlayTitleText"
-                                       Text="SİNYAL BEKLENİYOR / KAMERA SEÇ"
-                                       FontFamily="{DynamicResource DisplayFontFamily}"
-                                       FontSize="13"
-                                       FontWeight="Bold"
-                                       Foreground="#FFFFFF"
-                                       HorizontalAlignment="Center"
-                                       TextAlignment="Center"
-                                       TextWrapping="Wrap" />
-                            <TextBlock x:Name="NativeOverlaySubtitleText"
-                                       Text="RTSP · UDP/RTP · USB DIRECTSHOW"
-                                       FontFamily="{DynamicResource UiFontFamily}"
-                                       FontSize="11"
-                                       Foreground="#8E8E93"
-                                       Margin="0,6,0,0"
-                                       HorizontalAlignment="Center"
-                                       TextAlignment="Center"
-                                       TextWrapping="Wrap" />
-                        </StackPanel>
-                    </Border>
+            <Grid.RowDefinitions>
+                <RowDefinition Height="Auto" />
+                <RowDefinition Height="*" />
+            </Grid.RowDefinitions>
 
-                    <!-- Compact top overlay bar (Background transparent below bar so Map PiP remains interactive) -->
-                    <Border VerticalAlignment="Top"
-                            Background="#D9000000"
-                            BorderBrush="#3A3A3F"
-                            BorderThickness="0,0,0,1"
-                            Padding="8,5">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0"
-                                        Orientation="Horizontal"
-                                        VerticalAlignment="Center">
-                                <TextBlock Text="KAMERA"
-                                           FontFamily="{DynamicResource UiFontFamily}"
-                                           FontSize="11"
-                                           FontWeight="Bold"
-                                           Foreground="#F0F0FA"
-                                           VerticalAlignment="Center" />
-                                <TextBlock x:Name="NativeStatusText"
-                                           Text=" · BEKLİYOR"
-                                           FontFamily="{DynamicResource UiFontFamily}"
-                                           FontSize="11"
-                                           Foreground="#8E8E93"
-                                           VerticalAlignment="Center"
-                                           TextTrimming="CharacterEllipsis" />
-                            </StackPanel>
-                            <Button Grid.Column="1"
-                                    Content="YER DEĞİŞTİR"
-                                    Command="{Binding SwapMapAndCameraCommand}"
-                                    Style="{DynamicResource GhostPillButtonStyle}"
-                                    Padding="10,4"
-                                    FontSize="10" />
-                        </Grid>
-                    </Border>
-                </Grid>
-            </vlc:VideoView>
-
-            <!-- Pure WPF fallback overlay used when unhosted (unit tests) or if native host is inactive -->
-            <Border x:Name="WpfFallbackOverlay"
-                    Background="#0A0A0A"
-                    Visibility="Visible">
+            <!-- Compact pure-WPF header bar kept in Row 0 outside VideoView.Content so it never triggers ForegroundWindow occlusion -->
+            <Border Grid.Row="0"
+                    Background="#000000"
+                    BorderBrush="#3A3A3F"
+                    BorderThickness="0,0,0,1"
+                    Padding="8,5">
                 <Grid>
-                    <Border VerticalAlignment="Top"
-                            Background="#000000"
-                            BorderBrush="#3A3A3F"
-                            BorderThickness="0,0,0,1"
-                            Padding="8,5">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <TextBlock Grid.Column="0"
-                                       Text="KAMERA · BEKLİYOR"
-                                       FontFamily="{DynamicResource UiFontFamily}"
-                                       FontSize="11"
-                                       FontWeight="Bold"
-                                       Foreground="#F0F0FA"
-                                       VerticalAlignment="Center" />
-                            <Button Grid.Column="1"
-                                    Content="YER DEĞİŞTİR"
-                                    Command="{Binding SwapMapAndCameraCommand}"
-                                    Style="{DynamicResource GhostPillButtonStyle}"
-                                    Padding="10,4"
-                                    FontSize="10" />
-                        </Grid>
-                    </Border>
-                    <StackPanel VerticalAlignment="Center"
-                                HorizontalAlignment="Center"
-                                Margin="16,36,16,16">
-                        <TextBlock x:Name="FallbackOverlayTitleText"
-                                   Text="SİNYAL BEKLENİYOR / KAMERA SEÇ"
-                                   FontFamily="{DynamicResource DisplayFontFamily}"
-                                   FontSize="13"
-                                   FontWeight="Bold"
-                                   Foreground="#FFFFFF"
-                                   HorizontalAlignment="Center"
-                                   TextAlignment="Center"
-                                   TextWrapping="Wrap" />
-                        <TextBlock x:Name="FallbackOverlaySubtitleText"
-                                   Text="RTSP · UDP/RTP · USB DIRECTSHOW"
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <StackPanel Grid.Column="0"
+                                Orientation="Horizontal"
+                                VerticalAlignment="Center">
+                        <TextBlock Text="KAMERA"
                                    FontFamily="{DynamicResource UiFontFamily}"
                                    FontSize="11"
-                                   Foreground="#8E8E93"
-                                   Margin="0,6,0,0"
-                                   HorizontalAlignment="Center"
-                                   TextAlignment="Center"
-                                   TextWrapping="Wrap" />
+                                   FontWeight="Bold"
+                                   Foreground="#F0F0FA"
+                                   VerticalAlignment="Center" />
+                        <TextBlock x:Name="OverlayStatusText"
+                                   Text=" · BEKLİYOR"
+                                   FontFamily="{DynamicResource UiFontFamily}"
+                                   FontSize="11"
+                                   Foreground="#F0F0FA"
+                                   VerticalAlignment="Center"
+                                   TextTrimming="CharacterEllipsis" />
                     </StackPanel>
+                    <Button Grid.Column="1"
+                            Content="YER DEĞİŞTİR"
+                            Command="{Binding SwapMapAndCameraCommand}"
+                            Style="{DynamicResource GhostPillButtonStyle}"
+                            Padding="10,4"
+                            FontSize="10" />
                 </Grid>
+            </Border>
+
+            <!-- LibVLCSharp VideoView kept empty (no Content => no top-level ForegroundWindow) and Collapsed until actively playing -->
+            <vlc:VideoView x:Name="VideoViewControl"
+                           Grid.Row="1"
+                           Background="#000000"
+                           Visibility="Collapsed" />
+
+            <!-- Pure WPF idle/status overlay sibling visible whenever stream is not actively playing -->
+            <Border x:Name="WpfIdleOverlay"
+                    Grid.Row="1"
+                    Background="#0A0A0A"
+                    Visibility="Visible">
+                <StackPanel VerticalAlignment="Center"
+                            HorizontalAlignment="Center"
+                            Margin="16">
+                    <TextBlock x:Name="IdleOverlayTitleText"
+                               Text="SİNYAL BEKLENİYOR / KAMERA SEÇ"
+                               FontFamily="{DynamicResource DisplayFontFamily}"
+                               FontSize="13"
+                               FontWeight="Bold"
+                               Foreground="#FFFFFF"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                    <TextBlock x:Name="IdleOverlaySubtitleText"
+                               Text="RTSP · UDP/RTP · USB DIRECTSHOW"
+                               FontFamily="{DynamicResource UiFontFamily}"
+                               FontSize="11"
+                               Foreground="#F0F0FA"
+                               Margin="0,6,0,0"
+                               HorizontalAlignment="Center"
+                               TextAlignment="Center"
+                               TextWrapping="Wrap" />
+                </StackPanel>
             </Border>
         </Grid>
     </Border>

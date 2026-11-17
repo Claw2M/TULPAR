@@ -3,7 +3,7 @@ using System.Windows;
 using System.Windows.Controls;
 using System.Windows.Media;
 using Microsoft.Win32;
-using Tulpar.App.ViewModels;
+using Tulpar.App.Services;
 using Tulpar.MapHost;
 
 namespace Tulpar.App.Controls;
@@ -35,12 +35,12 @@ public partial class OfflineMapDialog : Window
 
         InitializeComponent();
 
-        if (initialBounds is not null)
+        if (initialBounds is { } bounds)
         {
-            MinLatBox.Text = initialBounds.MinLat.ToString("0.000000", CultureInfo.InvariantCulture);
-            MaxLatBox.Text = initialBounds.MaxLat.ToString("0.000000", CultureInfo.InvariantCulture);
-            MinLonBox.Text = initialBounds.MinLon.ToString("0.000000", CultureInfo.InvariantCulture);
-            MaxLonBox.Text = initialBounds.MaxLon.ToString("0.000000", CultureInfo.InvariantCulture);
+            MinLatBox.Text = bounds.MinLat.ToString("0.000000", CultureInfo.InvariantCulture);
+            MaxLatBox.Text = bounds.MaxLat.ToString("0.000000", CultureInfo.InvariantCulture);
+            MinLonBox.Text = bounds.MinLon.ToString("0.000000", CultureInfo.InvariantCulture);
+            MaxLonBox.Text = bounds.MaxLon.ToString("0.000000", CultureInfo.InvariantCulture);
         }
 
         ReloadProviders();
@@ -86,7 +86,7 @@ public partial class OfflineMapDialog : Window
                 out string? error))
         {
             TileEstimateText.Text = error ?? "GEÇERSİZ GİRDİ";
-            TileEstimateText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xCC, 0x00));
+            TileEstimateText.Foreground = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xFA));
             return;
         }
 
@@ -97,7 +97,7 @@ public partial class OfflineMapDialog : Window
             if (effMax < effMin)
             {
                 TileEstimateText.Text = $"TAHMİNİ KARO: 0 (KATMAN ZOOM ARALIĞI {provider.MinZoom}..{provider.MaxZoom})";
-                TileEstimateText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xCC, 0x00));
+                TileEstimateText.Foreground = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xFA));
                 return;
             }
 
@@ -107,7 +107,7 @@ public partial class OfflineMapDialog : Window
             if (tiles.Count > maxTiles)
             {
                 TileEstimateText.Text = $"TAHMİNİ KARO: > {maxTiles} (MAKS SINIR NEDENİYLE KIRPILACAK)";
-                TileEstimateText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xCC, 0x00));
+                TileEstimateText.Foreground = new SolidColorBrush(Color.FromRgb(0xF0, 0xF0, 0xFA));
             }
             else
             {
@@ -118,7 +118,7 @@ public partial class OfflineMapDialog : Window
         catch (Exception ex)
         {
             TileEstimateText.Text = ex.Message.ToUpperInvariant();
-            TileEstimateText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x3B, 0x30));
+            TileEstimateText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
         }
     }
 
@@ -227,7 +227,7 @@ public partial class OfflineMapDialog : Window
         catch (Exception ex)
         {
             MbtilesStatusText.Text = $"HATA: {ex.Message}";
-            MbtilesStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0x3B, 0x30));
+            MbtilesStatusText.Foreground = new SolidColorBrush(Color.FromRgb(0xFF, 0xFF, 0xFF));
         }
     }
 

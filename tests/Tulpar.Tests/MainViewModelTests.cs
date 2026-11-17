@@ -3,7 +3,11 @@ using System.IO.Packaging;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Data;
+using System.Windows.Media;
 using Tulpar.App.Controls;
+using Tulpar.App.Services;
+using Tulpar.App.Themes;
 using Tulpar.App.ViewModels;
 using Tulpar.Core.Mavlink;
 using Tulpar.Core.Missions;
@@ -348,7 +352,7 @@ public class MainViewModelTests
             bounds = new { minLat = 39.8, minLon = 32.7, maxLat = 40.0, maxLon = 33.0 }
         }));
         Assert.NotNull(vm.SelectedOfflineBounds);
-        Assert.Equal(39.8, vm.SelectedOfflineBounds!.MinLat, 4);
+        Assert.Equal(39.8, vm.SelectedOfflineBounds!.Value.MinLat, 4);
 
         // WebView2 guidedTarget MUST go through PendingSafetyAction (never sends immediately)
         transport.ClearSent();
@@ -494,6 +498,268 @@ public class MainViewModelTests
             missionPanel.Measure(new Size(900, 235));
             missionPanel.Arrange(new Rect(0, 0, 900, 235));
         });
+    }
+
+    [Fact]
+    public async Task LiveTelemetry_DoesNotOverwriteUserSelectedMode_UntilVehicleModeChanges()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+        await vm.ConnectAsync();
+
+        IVehicleProfile fwProfile = VehicleProfileFactory.Create(MavType.FixedWing, MavAutopilot.ArduPilotMega);
+        IReadOnlyList<FlightModeOption> fwModes = fwProfile.GetFlightModes(MavAutopilot.ArduPilotMega);
+        FlightModeOption manualMode = fwModes.First(m => string.Equals(m.Name, "MANUAL", StringComparison.OrdinalIgnoreCase));
+        FlightModeOption guidedMode = fwModes.First(m => string.Equals(m.Name, "GUIDED", StringComparison.OrdinalIgnoreCase));
+        FlightModeOption autoMode = fwModes.First(m => string.Equals(m.Name, "AUTO", StringComparison.OrdinalIgnoreCase));
+
+        // Initial heartbeat sets vehicle mode to MANUAL
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.FixedWing, MavAutopilot.ArduPilotMega, manualMode.CustomMode, seq: 1));
+        Assert.NotNull(vm.SelectedMode);
+        Assert.Equal("MANUAL", vm.SelectedMode!.Name);
+
+        // Operator selects GUIDED from the dropdown before clicking MOD
+        vm.SelectedMode = vm.AvailableModes.First(m => string.Equals(m.Name, guidedMode.Name, StringComparison.OrdinalIgnoreCase));
+        Assert.Equal("GUIDED", vm.SelectedMode!.Name);
+
+        // Subsequent live telemetry ticks still reporting MANUAL must NOT revert operator's selection
+        for (byte i = 2; i <= 6; i++)
+        {
+            transport.EmitIncoming(EncodeHeartbeat(1, MavType.FixedWing, MavAutopilot.ArduPilotMega, manualMode.CustomMode, seq: i));
+            Assert.Equal("GUIDED", vm.SelectedMode!.Name);
+        }
+
+        // Clicking MOD applies the operator's selected mode
+        transport.ClearSent();
+        await vm.ApplySelectedModeCommand.ExecuteAsync();
+        IReadOnlyList<MavlinkFrame> sent = transport.GetSentFramesExcludingHeartbeat();
+        Assert.Contains(sent, f => f.MessageId == SetModeMessage.MsgId);
+
+        // Actual mode change reported by vehicle updates SelectedMode
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.FixedWing, MavAutopilot.ArduPilotMega, autoMode.CustomMode, seq: 10));
+        Assert.Equal("AUTO", vm.SelectedMode!.Name);
+    }
+
+    [Fact]
+    public async Task SpaceXStyles_EditableComboBox_And_CheckBoxFullLabel_RenderProperly()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+
+        RunOnStaThread(() =>
+        {
+            _ = PackUriHelper.UriSchemePack;
+            _ = new ComboBox();
+
+            var theme = new ResourceDictionary
+            {
+                Source = new Uri("pack://application:,,,/Tulpar.App;component/Themes/SpaceXTheme.xaml", UriKind.Absolute)
+            };
+
+            var comboStyle = Assert.IsType<Style>(theme["SpaceXComboBoxStyle"]);
+            var checkStyle = Assert.IsType<Style>(theme["SpaceXCheckBoxStyle"]);
+
+            vm.SelectedVideoSourceKind = VideoSourceKind.UsbDirectShow;
+
+            var combo = new ComboBox
+            {
+                Style = comboStyle,
+                IsEditable = true,
+                IsTextSearchEnabled = false,
+                ItemsSource = vm.AvailableVideoDevices
+            };
+            combo.SetBinding(
+                ComboBox.TextProperty,
+                new Binding(nameof(MainViewModel.VideoStreamInput))
+                {
+                    Mode = BindingMode.TwoWay,
+                    UpdateSourceTrigger = UpdateSourceTrigger.PropertyChanged
+                });
+
+            var check = new CheckBox
+            {
+                Style = checkStyle
+            };
+            check.SetBinding(
+                ContentControl.ContentProperty,
+                new Binding(nameof(MainViewModel.UdpForwarderLabel)));
+
+            var host = new StackPanel
+            {
+                Resources = theme,
+                DataContext = vm
+            };
+            host.Children.Add(combo);
+            host.Children.Add(check);
+
+            combo.ApplyTemplate();
+            check.ApplyTemplate();
+            host.Measure(new Size(420, 120));
+            host.Arrange(new Rect(0, 0, 420, 120));
+            host.UpdateLayout();
+
+            var editableTextBox = Assert.IsType<TextBox>(combo.Template.FindName("PART_EditableTextBox", combo));
+            var contentSite = Assert.IsAssignableFrom<UIElement>(combo.Template.FindName("ContentSite", combo));
+            var arrowToggle = Assert.IsAssignableFrom<UIElement>(combo.Template.FindName("ArrowToggle", combo));
+            var fullAreaToggle = Assert.IsAssignableFrom<UIElement>(combo.Template.FindName("FullAreaToggle", combo));
+
+            Assert.Equal(Visibility.Visible, editableTextBox.Visibility);
+            Assert.False(editableTextBox.IsReadOnly);
+            Assert.Equal(Visibility.Collapsed, contentSite.Visibility);
+            Assert.Equal(Visibility.Visible, arrowToggle.Visibility);
+            Assert.Equal(Visibility.Collapsed, fullAreaToggle.Visibility);
+
+            editableTextBox.Text = "OBS Virtual Camera";
+            Assert.Equal("OBS Virtual Camera", vm.VideoStreamInput);
+
+            combo.SelectedItem = "Integrated Camera";
+            Assert.Equal("Integrated Camera", vm.VideoStreamInput);
+
+            ContentPresenter? presenter = FindVisualChild<ContentPresenter>(check);
+            Assert.NotNull(presenter);
+            Assert.Equal($"UDP YANSITICI ({vm.UdpForwarderEndpointText})", presenter!.Content);
+        });
+    }
+
+    [Fact]
+    public async Task EnumDisplayConverter_And_HomeDistanceDisplayText_FormatUppercaseLabels()
+    {
+        Assert.Equal("UDP SITL", EnumDisplayConverter.FormatEnum(ConnectionKind.Udp));
+        Assert.Equal("USB / COM", EnumDisplayConverter.FormatEnum(ConnectionKind.Serial));
+        Assert.Equal("TCP SITL", EnumDisplayConverter.FormatEnum(ConnectionKind.Tcp));
+        Assert.Equal("UDP / RTP", EnumDisplayConverter.FormatEnum(VideoSourceKind.UdpRtp));
+        Assert.Equal("RTSP", EnumDisplayConverter.FormatEnum(VideoSourceKind.Rtsp));
+        Assert.Equal("USB KAMERA", EnumDisplayConverter.FormatEnum(VideoSourceKind.UsbDirectShow));
+        Assert.Equal("NAV WAYPOINT", EnumDisplayConverter.FormatEnum(MavCmd.NavWaypoint));
+        Assert.Equal("NAV RTL", EnumDisplayConverter.FormatEnum(MavCmd.NavReturnToLaunch));
+
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+        Assert.Equal("-- M", vm.HomeDistanceDisplayText);
+        Assert.Equal("125.4 M", TelemetryDisplayFormatter.FormatHomeDistance(new TelemetrySnapshot { HasHome = true }, 125.4));
+    }
+
+    [Fact]
+    public async Task HoldCommand_And_GuidedAltitude_AreVehicleAdaptive()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+        await vm.ConnectAsync();
+
+        // SystemId == 0 blocks HOLD command
+        Assert.Equal((byte)0, vm.Snapshot.SystemId);
+        Assert.False(vm.RequestHoldCommand.CanExecute(null));
+        vm.RequestHold();
+        Assert.False(vm.HasPendingSafetyAction);
+
+        // Rover HOLD mode + 0m surface Guided altitude
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.GroundRover, MavAutopilot.ArduPilotMega, 0, seq: 1));
+        Assert.True(vm.RequestHoldCommand.CanExecute(null));
+        vm.RequestHold();
+        Assert.Equal(SafetyActionKind.Hold, vm.PendingSafetyAction!.Kind);
+        transport.ClearSent();
+        await vm.ConfirmSafetyActionCommand.ExecuteAsync();
+        Assert.Contains(transport.GetSentFramesExcludingHeartbeat(), f => f.MessageId == SetModeMessage.MsgId);
+
+        vm.RequestGuidedFlyHere(39.92, 32.85);
+        Assert.Equal(0f, vm.PendingSafetyAction!.AltitudeMeters);
+        vm.CancelSafetyAction();
+
+        // VTOL QLOITER mode + >=50m Guided floor
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.VtolTiltrotor, MavAutopilot.ArduPilotMega, 0, seq: 2));
+        IVehicleProfile vtolProfile = VehicleProfileFactory.Create(MavType.VtolTiltrotor, MavAutopilot.ArduPilotMega);
+        FlightModeOption? vtolHold = SafetyCommandBuilder.FindPreferredHoldMode(vtolProfile, MavAutopilot.ArduPilotMega);
+        Assert.Equal("QLOITER", vtolHold?.Name);
+        vm.RequestGuidedFlyHere(39.92, 32.85);
+        Assert.True(vm.PendingSafetyAction!.AltitudeMeters >= 50f);
+        vm.CancelSafetyAction();
+
+        // FixedWing LOITER mode + >=50m Guided floor
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.FixedWing, MavAutopilot.ArduPilotMega, 0, seq: 3));
+        IVehicleProfile fwProfile = VehicleProfileFactory.Create(MavType.FixedWing, MavAutopilot.ArduPilotMega);
+        FlightModeOption? fwHold = SafetyCommandBuilder.FindPreferredHoldMode(fwProfile, MavAutopilot.ArduPilotMega);
+        Assert.Equal("LOITER", fwHold?.Name);
+        vm.RequestGuidedFlyHere(39.92, 32.85);
+        Assert.True(vm.PendingSafetyAction!.AltitudeMeters >= 50f);
+        vm.CancelSafetyAction();
+
+        // Multirotor >=20m Guided floor + DoPauseContinue fallback when profile exposes no hold mode
+        IVehicleProfile mrProfile = VehicleProfileFactory.Create(MavType.Quadrotor, MavAutopilot.ArduPilotMega);
+        Assert.Equal(20f, SafetyCommandBuilder.ResolveSafeGuidedAltitude(mrProfile, new TelemetrySnapshot { IsConnected = true, SystemId = 1 }, null));
+
+        var noHoldProfile = new StubNoHoldVehicleProfile();
+        IMavlinkMessage fallbackHoldMsg = SafetyCommandBuilder.BuildHoldMessage(1, 1, noHoldProfile, MavAutopilot.Generic);
+        var pauseCmd = Assert.IsType<CommandLongMessage>(fallbackHoldMsg);
+        Assert.Equal(MavCmd.DoPauseContinue, pauseCmd.Command);
+    }
+
+    [Fact]
+    public async Task VideoFeedControl_KeepsVideoViewCollapsedWhenIdle_And_SwapsCornerRadiusOnPrimary()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+
+        RunOnStaThread(() =>
+        {
+            using var videoControl = new VideoFeedControl();
+            videoControl.DataContext = vm;
+            videoControl.Measure(new Size(340, 210));
+            videoControl.Arrange(new Rect(0, 0, 340, 210));
+            videoControl.UpdateLayout();
+
+            var videoView = Assert.IsAssignableFrom<UIElement>(videoControl.FindName("VideoViewControl"));
+            var idleOverlay = Assert.IsAssignableFrom<UIElement>(videoControl.FindName("WpfIdleOverlay"));
+            var outerFrame = Assert.IsType<Border>(videoControl.FindName("OuterFrame"));
+
+            Assert.Equal(Visibility.Collapsed, videoView.Visibility);
+            Assert.Equal(Visibility.Visible, idleOverlay.Visibility);
+            Assert.Equal(new CornerRadius(8), outerFrame.CornerRadius);
+
+            videoControl.StartStream("rtsp://127.0.0.1:8554/live");
+            Assert.Equal(Visibility.Collapsed, videoView.Visibility);
+
+            vm.SwapMapAndCameraCommand.Execute(null);
+            videoControl.UpdateLayout();
+            Assert.True(vm.IsCameraPrimary);
+            Assert.Equal(new CornerRadius(0), outerFrame.CornerRadius);
+        });
+    }
+
+    private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject
+    {
+        int count = VisualTreeHelper.GetChildrenCount(parent);
+        for (int i = 0; i < count; i++)
+        {
+            DependencyObject child = VisualTreeHelper.GetChild(parent, i);
+            if (child is T match)
+            {
+                return match;
+            }
+
+            T? nested = FindVisualChild<T>(child);
+            if (nested is not null)
+            {
+                return nested;
+            }
+        }
+
+        return null;
+    }
+
+    private sealed class StubNoHoldVehicleProfile : IVehicleProfile
+    {
+        public VehicleCategory Category => VehicleCategory.Multirotor;
+        public string DisplayLabel => "STUB";
+        public bool ShowAirspeed => false;
+        public bool ShowHorizon => true;
+        public bool ShowAltitudeTape => true;
+        public bool ShowVtolTransition => false;
+        public bool SurfaceOnlyMode => false;
+        public IReadOnlyList<MavCmd> SupportedMissionCommands => [MavCmd.NavWaypoint];
+        public IReadOnlyList<FlightModeOption> GetFlightModes(MavAutopilot autopilot) => [new FlightModeOption("STABILIZE", 0, 0)];
+        public string ResolveModeName(MavAutopilot autopilot, uint customMode, byte baseMode) => "STABILIZE";
+        public MavlinkFrame BuildGuidedTargetCommand(byte targetSysId, byte targetCompId, byte gcsSysId, byte gcsCompId, byte seq, MavAutopilot autopilot, double lat, double lon, float altMeters, float? loiterRadius = null) =>
+            throw new NotSupportedException();
     }
 
     private static void RunOnStaThread(Action action)

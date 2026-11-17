@@ -4,6 +4,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Media;
 using LibVLCSharp.Shared;
+using Tulpar.App.Services;
 using Tulpar.App.ViewModels;
 using MediaPlayer = LibVLCSharp.Shared.MediaPlayer;
 
@@ -192,18 +193,9 @@ public partial class VideoFeedControl : UserControl, IDisposable
 
     private void OnLoaded(object sender, RoutedEventArgs e)
     {
-        bool hasWindow = Window.GetWindow(this) is not null;
-        if (hasWindow)
-        {
-            VideoViewControl.Visibility = Visibility.Visible;
-            WpfFallbackOverlay.Visibility = Visibility.Collapsed;
-            ForegroundRoot.DataContext = DataContext;
-        }
-        else
-        {
-            VideoViewControl.Visibility = Visibility.Collapsed;
-            WpfFallbackOverlay.Visibility = Visibility.Visible;
-        }
+        bool showVideo = IsStreamPlaying && Window.GetWindow(this) is not null;
+        VideoViewControl.Visibility = showVideo ? Visibility.Visible : Visibility.Collapsed;
+        WpfIdleOverlay.Visibility = showVideo ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void OnUnloaded(object sender, RoutedEventArgs e)
@@ -214,7 +206,6 @@ public partial class VideoFeedControl : UserControl, IDisposable
     private void OnDataContextChanged(object sender, DependencyPropertyChangedEventArgs e)
     {
         UnhookViewModel();
-        ForegroundRoot.DataContext = e.NewValue;
         if (e.NewValue is MainViewModel vm)
         {
             _boundViewModel = vm;
@@ -360,14 +351,13 @@ public partial class VideoFeedControl : UserControl, IDisposable
         _overlayMessage = title;
         _overlaySubtitle = subtitle;
 
-        NativeOverlayTitleText.Text = title;
-        NativeOverlaySubtitleText.Text = subtitle;
-        FallbackOverlayTitleText.Text = title;
-        FallbackOverlaySubtitleText.Text = subtitle;
-        NativeStatusText.Text = statusText;
+        IdleOverlayTitleText.Text = title;
+        IdleOverlaySubtitleText.Text = subtitle;
+        OverlayStatusText.Text = statusText;
 
-        Visibility idleVisibility = showIdleOverlay ? Visibility.Visible : Visibility.Collapsed;
-        NativeIdleOverlay.Visibility = idleVisibility;
+        bool canShowNativeVideo = !showIdleOverlay && Window.GetWindow(this) is not null;
+        VideoViewControl.Visibility = canShowNativeVideo ? Visibility.Visible : Visibility.Collapsed;
+        WpfIdleOverlay.Visibility = canShowNativeVideo ? Visibility.Collapsed : Visibility.Visible;
     }
 
     private void StopCurrentMediaOnly()

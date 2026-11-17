@@ -8,6 +8,7 @@ using System.Windows.Controls;
 using System.Windows.Interop;
 using System.Windows.Threading;
 using Tulpar.App.Controls;
+using Tulpar.App.Services;
 using Tulpar.App.ViewModels;
 using Tulpar.MapHost;
 
@@ -210,33 +211,45 @@ public partial class MainWindow : Window
 
     private async void OnWindowClosedAsync(object? sender, EventArgs e)
     {
+        if (_isShuttingDown)
+        {
+            return;
+        }
+
         _isShuttingDown = true;
         _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
 
-        VideoFeed.Dispose();
-        MapHost.Dispose();
-
         try
         {
-            await _viewModel.DisposeAsync();
-        }
-        catch
-        {
-        }
+            VideoFeed.Dispose();
+            MapHost.Dispose();
 
-        if (_mapServer is not null)
-        {
             try
             {
-                await _mapServer.DisposeAsync();
+                await _viewModel.DisposeAsync();
             }
             catch
             {
             }
-        }
 
-        _tileCache?.Dispose();
-        _mapHttpClient?.Dispose();
+            if (_mapServer is not null)
+            {
+                try
+                {
+                    await _mapServer.DisposeAsync();
+                }
+                catch
+                {
+                }
+            }
+
+            _tileCache?.Dispose();
+            _mapHttpClient?.Dispose();
+        }
+        finally
+        {
+            Application.Current?.Shutdown();
+        }
     }
 
     [DllImport("user32.dll", SetLastError = true)]
