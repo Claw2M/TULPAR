@@ -73,9 +73,10 @@ public sealed class MapHttpServer : IAsyncDisposable
             _ownsHttpClient = false;
         }
 
-        _assetsDirectory = string.IsNullOrWhiteSpace(assetsDirectory)
-            ? Path.Combine(AppContext.BaseDirectory, "Assets", "Map")
-            : Path.GetFullPath(assetsDirectory);
+        _assetsDirectory = Path.TrimEndingDirectorySeparator(
+            string.IsNullOrWhiteSpace(assetsDirectory)
+                ? Path.Combine(AppContext.BaseDirectory, "Assets", "Map")
+                : Path.GetFullPath(assetsDirectory));
 
         _upstreamTimeout = upstreamTimeout is { TotalMilliseconds: > 0 } customTimeout
             ? customTimeout
@@ -134,6 +135,17 @@ public sealed class MapHttpServer : IAsyncDisposable
         ObjectDisposedException.ThrowIf(Volatile.Read(ref _disposed) != 0, this);
 
         string fullPath = Path.GetFullPath(mbtilesPath);
+
+        lock (_lifecycleLock)
+        {
+            ObjectDisposedException.ThrowIf(_disposed != 0, this);
+
+            if (_mbtilesPathToId.TryGetValue(fullPath, out string? existingId))
+            {
+                return existingId;
+            }
+        }
+
         var reader = new MbtilesReader(fullPath);
 
         lock (_lifecycleLock)
@@ -146,12 +158,7 @@ public sealed class MapHttpServer : IAsyncDisposable
 
             if (_mbtilesPathToId.TryGetValue(fullPath, out string? existingId))
             {
-                if (_mbtilesLayers.TryGetValue(existingId, out RegisteredMbtilesLayer? oldLayer))
-                {
-                    oldLayer.Reader.Dispose();
-                }
-
-                _mbtilesLayers[existingId] = new RegisteredMbtilesLayer(existingId, reader);
+                reader.Dispose();
                 return existingId;
             }
 
@@ -316,53 +323,84 @@ public sealed class MapHttpServer : IAsyncDisposable
     {
         using (client)
         {
-            client.NoDelay = true;
-            await using NetworkStream stream = client.GetStream();
-
-            while (!serverCt.IsCancellationRequested)
+            NetworkStream stream;
+            try
             {
-                HttpRequestHeaderInfo? request;
-                try
-                {
-                    using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(serverCt);
-                    idleCts.CancelAfter(KeepAliveIdleTimeout);
-                    request = await ReadHttpRequestAsync(stream, idleCts.Token).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException)
-                {
-                    break;
-                }
-                catch (IOException)
-                {
-                    break;
-                }
+                client.NoDelay = true;
+                stream = client.GetStream();
+            }
+            catch (ObjectDisposedException)
+            {
+                return;
+            }
+            catch (InvalidOperationException)
+            {
+                return;
+            }
+            catch (SocketException)
+            {
+                return;
+            }
 
-                if (request is null)
+            await using (stream)
+            {
+                while (!serverCt.IsCancellationRequested)
                 {
-                    break;
-                }
+                    HttpRequestHeaderInfo? request;
+                    try
+                    {
+                        using var idleCts = CancellationTokenSource.CreateLinkedTokenSource(serverCt);
+                        idleCts.CancelAfter(KeepAliveIdleTimeout);
+                        request = await ReadHttpRequestAsync(stream, idleCts.Token).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException)
+                    {
+                        break;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        break;
+                    }
+                    catch (IOException)
+                    {
+                        break;
+                    }
+                    catch (SocketException)
+                    {
+                        break;
+                    }
 
-                bool closeAfterResponse = request.CloseConnection;
-                try
-                {
-                    await RouteAndWriteResponseAsync(stream, request, serverCt).ConfigureAwait(false);
-                }
-                catch (OperationCanceledException) when (serverCt.IsCancellationRequested)
-                {
-                    break;
-                }
-                catch (IOException)
-                {
-                    break;
-                }
-                catch (SocketException)
-                {
-                    break;
-                }
+                    if (request is null)
+                    {
+                        break;
+                    }
 
-                if (closeAfterResponse)
-                {
-                    break;
+                    bool closeAfterResponse = request.CloseConnection;
+                    try
+                    {
+                        await RouteAndWriteResponseAsync(stream, request, serverCt).ConfigureAwait(false);
+                    }
+                    catch (OperationCanceledException) when (serverCt.IsCancellationRequested)
+                    {
+                        break;
+                    }
+                    catch (ObjectDisposedException)
+                    {
+                        break;
+                    }
+                    catch (IOException)
+                    {
+                        break;
+                    }
+                    catch (SocketException)
+                    {
+                        break;
+                    }
+
+                    if (closeAfterResponse)
+                    {
+                        break;
+                    }
                 }
             }
         }
@@ -503,9 +541,12 @@ public sealed class MapHttpServer : IAsyncDisposable
         bool closeConnection,
         CancellationToken ct)
     {
-        string baseDirFull = Path.GetFullPath(_assetsDirectory);
+        string baseDirFull = Path.TrimEndingDirectorySeparator(Path.GetFullPath(_assetsDirectory));
+        string basePrefix = baseDirFull.EndsWith(Path.DirectorySeparatorChar)
+            ? baseDirFull
+            : baseDirFull + Path.DirectorySeparatorChar;
         string fullPath = Path.GetFullPath(Path.Combine(baseDirFull, fileName));
-        if (!fullPath.StartsWith(baseDirFull + Path.DirectorySeparatorChar, StringComparison.OrdinalIgnoreCase) ||
+        if (!fullPath.StartsWith(basePrefix, StringComparison.OrdinalIgnoreCase) ||
             !File.Exists(fullPath))
         {
             await WriteResponseAsync(

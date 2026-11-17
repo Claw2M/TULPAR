@@ -494,6 +494,106 @@ public sealed class MapHostTests : IDisposable
         }
     }
 
+    [Fact]
+    public async Task MapHttpServer_AssetsDirectoryWithTrailingSeparator_ServesStaticAssets()
+    {
+        string dbPath = Path.Combine(_tempDir, "trailing-slash.db");
+        using var cache = new TileCacheStore(dbPath);
+        string assetsDirWithTrailingSlash = Path.Combine(AppContext.BaseDirectory, "Assets", "Map")
+            + Path.DirectorySeparatorChar;
+
+        await using var server = new MapHttpServer(cache, assetsDirectory: assetsDirWithTrailingSlash);
+        await server.StartAsync();
+
+        using var client = new HttpClient { BaseAddress = server.BaseUri };
+        HttpResponseMessage rootResp = await client.GetAsync("/");
+        Assert.Equal(HttpStatusCode.OK, rootResp.StatusCode);
+        Assert.Contains("Tulpar Mission Map", await rootResp.Content.ReadAsStringAsync(), StringComparison.Ordinal);
+
+        HttpResponseMessage indexResp = await client.GetAsync("/index.html");
+        Assert.Equal(HttpStatusCode.OK, indexResp.StatusCode);
+
+        string assetsDirWithForwardSlash = Path.Combine(AppContext.BaseDirectory, "Assets", "Map") + '/';
+        await using var serverForward = new MapHttpServer(cache, assetsDirectory: assetsDirWithForwardSlash);
+        await serverForward.StartAsync();
+        using var clientForward = new HttpClient { BaseAddress = serverForward.BaseUri };
+        Assert.Equal(HttpStatusCode.OK, (await clientForward.GetAsync("/")).StatusCode);
+    }
+
+    [Fact]
+    public async Task MapHttpServer_ReregisterMbtilesDuringConcurrentReads_AndDisposeActiveKeepAlive_SucceedsWithoutUnobservedExceptions()
+    {
+        string dbPath = Path.Combine(_tempDir, "reregister.db");
+        string mbtilesPath = Path.Combine(_tempDir, "concurrent.mbtiles");
+        const int z = 11;
+        const int x = 1210;
+        const int xyzY = 777;
+        const int tmsY = (1 << z) - 1 - xyzY;
+        byte[] payload = [.. SamplePngTile, 0x77];
+
+        CreateSampleMbtiles(mbtilesPath, "Concurrent", "png", [(z, x, tmsY, payload)]);
+
+        var unobserved = new List<Exception>();
+        EventHandler<UnobservedTaskExceptionEventArgs> onUnobserved = (_, args) =>
+        {
+            lock (unobserved)
+            {
+                unobserved.Add(args.Exception);
+            }
+            args.SetObserved();
+        };
+        TaskScheduler.UnobservedTaskException += onUnobserved;
+
+        try
+        {
+            using var cache = new TileCacheStore(dbPath);
+            var server = new MapHttpServer(cache);
+            string firstLayerId = server.RegisterMbtiles(mbtilesPath);
+            await server.StartAsync();
+
+            using var client = new HttpClient { BaseAddress = server.BaseUri };
+
+            // Exercise concurrent tile reads while re-registering the same .mbtiles path
+            Task[] readTasks = Enumerable.Range(0, 16).Select(async _ =>
+            {
+                for (int i = 0; i < 10; i++)
+                {
+                    HttpResponseMessage resp = await client.GetAsync($"/tiles/{firstLayerId}/{z}/{x}/{xyzY}");
+                    Assert.Equal(HttpStatusCode.OK, resp.StatusCode);
+                    Assert.Equal(payload, await resp.Content.ReadAsByteArrayAsync());
+                }
+            }).ToArray();
+
+            Task reregisterTask = Task.Run(() =>
+            {
+                for (int i = 0; i < 20; i++)
+                {
+                    string id = server.RegisterMbtiles(mbtilesPath);
+                    Assert.Equal(firstLayerId, id);
+                }
+            });
+
+            await Task.WhenAll([.. readTasks, reregisterTask]);
+
+            // Leave client keep-alive connection open & idle, then dispose server to force Client.Close()
+            // while HandleClientConnectionAsync is awaiting ReadHttpRequestAsync.
+            await server.DisposeAsync();
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            lock (unobserved)
+            {
+                Assert.Empty(unobserved);
+            }
+        }
+        finally
+        {
+            TaskScheduler.UnobservedTaskException -= onUnobserved;
+        }
+    }
+
     private static void CreateSampleMbtiles(
         string path,
         string name,
