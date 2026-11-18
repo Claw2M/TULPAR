@@ -8,3 +8,4 @@ publish/
 *.db
 *.tlog
 *_wpftmp.csproj
+src/Tulpar.Android/build/

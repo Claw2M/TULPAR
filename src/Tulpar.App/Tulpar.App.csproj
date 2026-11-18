@@ -13,6 +13,7 @@
 
   <ItemGroup>
     <Resource Include="Assets\Fonts\*.ttf" Condition="Exists('Assets\Fonts')" />
+    <Resource Include="Assets\Images\*" Condition="Exists('Assets\Images')" />
     <Content Include="Assets\Fonts\OFL-1.1.txt" Condition="Exists('Assets\Fonts\OFL-1.1.txt')">
       <CopyToOutputDirectory>PreserveNewest</CopyToOutputDirectory>
       <CopyToPublishDirectory>PreserveNewest</CopyToPublishDirectory>
@@ -25,6 +26,7 @@
     <Nullable>enable</Nullable>
     <ImplicitUsings>enable</ImplicitUsings>
     <UseWPF>true</UseWPF>
+    <ApplicationIcon Condition="Exists('Assets\Images\tulpar.ico')">Assets\Images\tulpar.ico</ApplicationIcon>
   </PropertyGroup>
 
 </Project>

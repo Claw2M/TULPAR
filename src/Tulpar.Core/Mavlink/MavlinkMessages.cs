@@ -68,6 +68,30 @@ internal static class MavlinkWire
 
         return true;
     }
+
+    public static void WriteFixedAscii(string? value, Span<byte> destination)
+    {
+        destination.Clear();
+        if (string.IsNullOrEmpty(value))
+        {
+            return;
+        }
+
+        byte[] bytes = Encoding.UTF8.GetBytes(value);
+        int copyLength = Math.Min(bytes.Length, destination.Length);
+        bytes.AsSpan(0, copyLength).CopyTo(destination);
+    }
+
+    public static string ReadFixedAscii(ReadOnlySpan<byte> source)
+    {
+        int nullTerminator = source.IndexOf((byte)0);
+        if (nullTerminator >= 0)
+        {
+            source = source[..nullTerminator];
+        }
+
+        return Encoding.UTF8.GetString(source);
+    }
 }
 
 /// <summary>
@@ -285,6 +309,182 @@ public sealed record SetModeMessage(byte TargetSystem, MavModeFlag BaseMode, uin
             TargetSystem: buf[4],
             BaseMode: (MavModeFlag)buf[5],
             CustomMode: BinaryPrimitives.ReadUInt32LittleEndian(buf[0..4]));
+    }
+}
+
+/// <summary>
+/// PARAM_REQUEST_READ (#20, CRC_EXTRA=214, 20 bytes).
+/// </summary>
+public sealed record ParamRequestReadMessage(
+    byte TargetSystem,
+    byte TargetComponent,
+    string ParamId,
+    short ParamIndex = -1) : IMavlinkMessage
+{
+    public const uint MsgId = 20;
+    public const byte MsgCrcExtra = 214;
+    public const int WireSize = 20;
+    public const int ParamIdLength = 16;
+
+    public uint MessageId => MsgId;
+    public byte CrcExtra => MsgCrcExtra;
+
+    public byte[] EncodePayload()
+    {
+        byte[] buf = new byte[WireSize];
+        BinaryPrimitives.WriteInt16LittleEndian(buf.AsSpan(0, 2), ParamIndex);
+        buf[2] = TargetSystem;
+        buf[3] = TargetComponent;
+        MavlinkWire.WriteFixedAscii(ParamId, buf.AsSpan(4, ParamIdLength));
+        return buf;
+    }
+
+    public static ParamRequestReadMessage Decode(MavlinkFrame frame)
+    {
+        MavlinkWire.EnsureMessageId(frame, MsgId);
+        return Decode(frame.Payload.Span);
+    }
+
+    public static ParamRequestReadMessage Decode(ReadOnlySpan<byte> payload)
+    {
+        Span<byte> buf = stackalloc byte[WireSize];
+        MavlinkWire.ZeroPad(payload, buf);
+        return new ParamRequestReadMessage(
+            TargetSystem: buf[2],
+            TargetComponent: buf[3],
+            ParamId: MavlinkWire.ReadFixedAscii(buf.Slice(4, ParamIdLength)),
+            ParamIndex: BinaryPrimitives.ReadInt16LittleEndian(buf[0..2]));
+    }
+}
+
+/// <summary>
+/// PARAM_REQUEST_LIST (#21, CRC_EXTRA=159, 2 bytes).
+/// </summary>
+public sealed record ParamRequestListMessage(
+    byte TargetSystem,
+    byte TargetComponent) : IMavlinkMessage
+{
+    public const uint MsgId = 21;
+    public const byte MsgCrcExtra = 159;
+    public const int WireSize = 2;
+
+    public uint MessageId => MsgId;
+    public byte CrcExtra => MsgCrcExtra;
+
+    public byte[] EncodePayload()
+    {
+        return [TargetSystem, TargetComponent];
+    }
+
+    public static ParamRequestListMessage Decode(MavlinkFrame frame)
+    {
+        MavlinkWire.EnsureMessageId(frame, MsgId);
+        return Decode(frame.Payload.Span);
+    }
+
+    public static ParamRequestListMessage Decode(ReadOnlySpan<byte> payload)
+    {
+        Span<byte> buf = stackalloc byte[WireSize];
+        MavlinkWire.ZeroPad(payload, buf);
+        return new ParamRequestListMessage(
+            TargetSystem: buf[0],
+            TargetComponent: buf[1]);
+    }
+}
+
+/// <summary>
+/// PARAM_VALUE (#22, CRC_EXTRA=220, 25 bytes).
+/// </summary>
+public sealed record ParamValueMessage(
+    string ParamId,
+    float ParamValue,
+    MavParamType ParamType,
+    ushort ParamCount,
+    ushort ParamIndex) : IMavlinkMessage
+{
+    public const uint MsgId = 22;
+    public const byte MsgCrcExtra = 220;
+    public const int WireSize = 25;
+    public const int ParamIdLength = 16;
+
+    public uint MessageId => MsgId;
+    public byte CrcExtra => MsgCrcExtra;
+
+    public byte[] EncodePayload()
+    {
+        byte[] buf = new byte[WireSize];
+        BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(0, 4), ParamValue);
+        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(4, 2), ParamCount);
+        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(6, 2), ParamIndex);
+        MavlinkWire.WriteFixedAscii(ParamId, buf.AsSpan(8, ParamIdLength));
+        buf[24] = (byte)ParamType;
+        return buf;
+    }
+
+    public static ParamValueMessage Decode(MavlinkFrame frame)
+    {
+        MavlinkWire.EnsureMessageId(frame, MsgId);
+        return Decode(frame.Payload.Span);
+    }
+
+    public static ParamValueMessage Decode(ReadOnlySpan<byte> payload)
+    {
+        Span<byte> buf = stackalloc byte[WireSize];
+        MavlinkWire.ZeroPad(payload, buf);
+        return new ParamValueMessage(
+            ParamId: MavlinkWire.ReadFixedAscii(buf.Slice(8, ParamIdLength)),
+            ParamValue: BinaryPrimitives.ReadSingleLittleEndian(buf[0..4]),
+            ParamType: (MavParamType)buf[24],
+            ParamCount: BinaryPrimitives.ReadUInt16LittleEndian(buf[4..6]),
+            ParamIndex: BinaryPrimitives.ReadUInt16LittleEndian(buf[6..8]));
+    }
+}
+
+/// <summary>
+/// PARAM_SET (#23, CRC_EXTRA=168, 23 bytes).
+/// </summary>
+public sealed record ParamSetMessage(
+    byte TargetSystem,
+    byte TargetComponent,
+    string ParamId,
+    float ParamValue,
+    MavParamType ParamType) : IMavlinkMessage
+{
+    public const uint MsgId = 23;
+    public const byte MsgCrcExtra = 168;
+    public const int WireSize = 23;
+    public const int ParamIdLength = 16;
+
+    public uint MessageId => MsgId;
+    public byte CrcExtra => MsgCrcExtra;
+
+    public byte[] EncodePayload()
+    {
+        byte[] buf = new byte[WireSize];
+        BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(0, 4), ParamValue);
+        buf[4] = TargetSystem;
+        buf[5] = TargetComponent;
+        MavlinkWire.WriteFixedAscii(ParamId, buf.AsSpan(6, ParamIdLength));
+        buf[22] = (byte)ParamType;
+        return buf;
+    }
+
+    public static ParamSetMessage Decode(MavlinkFrame frame)
+    {
+        MavlinkWire.EnsureMessageId(frame, MsgId);
+        return Decode(frame.Payload.Span);
+    }
+
+    public static ParamSetMessage Decode(ReadOnlySpan<byte> payload)
+    {
+        Span<byte> buf = stackalloc byte[WireSize];
+        MavlinkWire.ZeroPad(payload, buf);
+        return new ParamSetMessage(
+            TargetSystem: buf[4],
+            TargetComponent: buf[5],
+            ParamId: MavlinkWire.ReadFixedAscii(buf.Slice(6, ParamIdLength)),
+            ParamValue: BinaryPrimitives.ReadSingleLittleEndian(buf[0..4]),
+            ParamType: (MavParamType)buf[22]);
     }
 }
 
@@ -1562,6 +1762,112 @@ public sealed record BatteryStatusMessage(
 }
 
 /// <summary>
+/// EKF_STATUS_REPORT (#193, CRC_EXTRA=71, 22 base + 4 extension = 26 bytes).
+/// </summary>
+public sealed record EkfStatusReportMessage(
+    EkfStatusFlags Flags,
+    float VelocityVariance,
+    float PosHorizVariance,
+    float PosVertVariance,
+    float CompassVariance,
+    float TerrainAltVariance,
+    float AirspeedVariance = 0f) : IMavlinkMessage
+{
+    public const uint MsgId = 193;
+    public const byte MsgCrcExtra = 71;
+    public const int WireSize = 26;
+
+    public uint MessageId => MsgId;
+    public byte CrcExtra => MsgCrcExtra;
+
+    public byte[] EncodePayload()
+    {
+        byte[] buf = new byte[WireSize];
+        BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(0, 4), VelocityVariance);
+        BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(4, 4), PosHorizVariance);
+        BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(8, 4), PosVertVariance);
+        BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(12, 4), CompassVariance);
+        BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(16, 4), TerrainAltVariance);
+        BinaryPrimitives.WriteUInt16LittleEndian(buf.AsSpan(20, 2), (ushort)Flags);
+        BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(22, 4), AirspeedVariance);
+        return buf;
+    }
+
+    public static EkfStatusReportMessage Decode(MavlinkFrame frame)
+    {
+        MavlinkWire.EnsureMessageId(frame, MsgId);
+        return Decode(frame.Payload.Span);
+    }
+
+    public static EkfStatusReportMessage Decode(ReadOnlySpan<byte> payload)
+    {
+        Span<byte> buf = stackalloc byte[WireSize];
+        MavlinkWire.ZeroPad(payload, buf);
+        return new EkfStatusReportMessage(
+            Flags: (EkfStatusFlags)BinaryPrimitives.ReadUInt16LittleEndian(buf[20..22]),
+            VelocityVariance: BinaryPrimitives.ReadSingleLittleEndian(buf[0..4]),
+            PosHorizVariance: BinaryPrimitives.ReadSingleLittleEndian(buf[4..8]),
+            PosVertVariance: BinaryPrimitives.ReadSingleLittleEndian(buf[8..12]),
+            CompassVariance: BinaryPrimitives.ReadSingleLittleEndian(buf[12..16]),
+            TerrainAltVariance: BinaryPrimitives.ReadSingleLittleEndian(buf[16..20]),
+            AirspeedVariance: BinaryPrimitives.ReadSingleLittleEndian(buf[22..26]));
+    }
+}
+
+/// <summary>
+/// VIBRATION (#241, CRC_EXTRA=90, 32 bytes).
+/// </summary>
+public sealed record VibrationMessage(
+    ulong TimeUsec,
+    float VibrationX,
+    float VibrationY,
+    float VibrationZ,
+    uint Clipping0 = 0,
+    uint Clipping1 = 0,
+    uint Clipping2 = 0) : IMavlinkMessage
+{
+    public const uint MsgId = 241;
+    public const byte MsgCrcExtra = 90;
+    public const int WireSize = 32;
+
+    public uint MessageId => MsgId;
+    public byte CrcExtra => MsgCrcExtra;
+
+    public byte[] EncodePayload()
+    {
+        byte[] buf = new byte[WireSize];
+        BinaryPrimitives.WriteUInt64LittleEndian(buf.AsSpan(0, 8), TimeUsec);
+        BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(8, 4), VibrationX);
+        BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(12, 4), VibrationY);
+        BinaryPrimitives.WriteSingleLittleEndian(buf.AsSpan(16, 4), VibrationZ);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(20, 4), Clipping0);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(24, 4), Clipping1);
+        BinaryPrimitives.WriteUInt32LittleEndian(buf.AsSpan(28, 4), Clipping2);
+        return buf;
+    }
+
+    public static VibrationMessage Decode(MavlinkFrame frame)
+    {
+        MavlinkWire.EnsureMessageId(frame, MsgId);
+        return Decode(frame.Payload.Span);
+    }
+
+    public static VibrationMessage Decode(ReadOnlySpan<byte> payload)
+    {
+        Span<byte> buf = stackalloc byte[WireSize];
+        MavlinkWire.ZeroPad(payload, buf);
+        return new VibrationMessage(
+            TimeUsec: BinaryPrimitives.ReadUInt64LittleEndian(buf[0..8]),
+            VibrationX: BinaryPrimitives.ReadSingleLittleEndian(buf[8..12]),
+            VibrationY: BinaryPrimitives.ReadSingleLittleEndian(buf[12..16]),
+            VibrationZ: BinaryPrimitives.ReadSingleLittleEndian(buf[16..20]),
+            Clipping0: BinaryPrimitives.ReadUInt32LittleEndian(buf[20..24]),
+            Clipping1: BinaryPrimitives.ReadUInt32LittleEndian(buf[24..28]),
+            Clipping2: BinaryPrimitives.ReadUInt32LittleEndian(buf[28..32]));
+    }
+}
+
+/// <summary>
 /// HOME_POSITION (#242, CRC_EXTRA=104, 52 base + 8 extension = 60 bytes).
 /// </summary>
 public sealed record HomePositionMessage(
@@ -1668,6 +1974,41 @@ public sealed record HomePositionMessage(
             ApproachY: BinaryPrimitives.ReadSingleLittleEndian(buf[44..48]),
             ApproachZ: BinaryPrimitives.ReadSingleLittleEndian(buf[48..52]),
             TimeUsec: BinaryPrimitives.ReadUInt64LittleEndian(buf[52..60]));
+    }
+}
+
+/// <summary>
+/// EXTENDED_SYS_STATE (#245, CRC_EXTRA=130, 2 bytes).
+/// </summary>
+public sealed record ExtendedSysStateMessage(
+    MavVtolState VtolState,
+    MavLandedState LandedState) : IMavlinkMessage
+{
+    public const uint MsgId = 245;
+    public const byte MsgCrcExtra = 130;
+    public const int WireSize = 2;
+
+    public uint MessageId => MsgId;
+    public byte CrcExtra => MsgCrcExtra;
+
+    public byte[] EncodePayload()
+    {
+        return [(byte)VtolState, (byte)LandedState];
+    }
+
+    public static ExtendedSysStateMessage Decode(MavlinkFrame frame)
+    {
+        MavlinkWire.EnsureMessageId(frame, MsgId);
+        return Decode(frame.Payload.Span);
+    }
+
+    public static ExtendedSysStateMessage Decode(ReadOnlySpan<byte> payload)
+    {
+        Span<byte> buf = stackalloc byte[WireSize];
+        MavlinkWire.ZeroPad(payload, buf);
+        return new ExtendedSysStateMessage(
+            VtolState: (MavVtolState)buf[0],
+            LandedState: (MavLandedState)buf[1]);
     }
 }
 

@@ -22,9 +22,10 @@
             <Grid.RowDefinitions>
                 <RowDefinition Height="Auto" />
                 <RowDefinition Height="*" />
+                <RowDefinition Height="Auto" />
             </Grid.RowDefinitions>
 
-            <!-- Compact pure-WPF header bar kept in Row 0 outside VideoView.Content so it never triggers ForegroundWindow occlusion -->
+            <!-- Compact pure-WPF header bar kept in Row 0 outside VideoView.Content -->
             <Border Grid.Row="0"
                     Background="#000000"
                     BorderBrush="#3A3A3F"
@@ -40,45 +41,58 @@
                                 VerticalAlignment="Center">
                         <TextBlock Text="KAMERA"
                                    FontFamily="{DynamicResource UiFontFamily}"
-                                   FontSize="11"
+                                   FontSize="11.5"
                                    FontWeight="Bold"
-                                   Foreground="#F0F0FA"
+                                   Foreground="#FFFFFF"
                                    VerticalAlignment="Center" />
                         <TextBlock x:Name="OverlayStatusText"
                                    Text=" · BEKLİYOR"
                                    FontFamily="{DynamicResource UiFontFamily}"
                                    FontSize="11"
-                                   Foreground="#F0F0FA"
+                                   Foreground="#9B9BA6"
                                    VerticalAlignment="Center"
                                    TextTrimming="CharacterEllipsis" />
                     </StackPanel>
-                    <Button Grid.Column="1"
-                            Content="YER DEĞİŞTİR"
-                            Command="{Binding SwapMapAndCameraCommand}"
-                            Style="{DynamicResource GhostPillButtonStyle}"
-                            Padding="10,4"
-                            FontSize="10" />
+                    <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                        <Button Content="⛶ BÜYÜT"
+                                ToolTip="Kamerayı büyük popup pencerede aç"
+                                Click="OnExpandPopupClick"
+                                Style="{DynamicResource GhostPillButtonStyle}"
+                                MinHeight="24"
+                                Padding="8,3"
+                                FontSize="10"
+                                Margin="0,0,4,0" />
+                        <Button Content="YER DEĞİŞTİR"
+                                Command="{Binding SwapMapAndCameraCommand}"
+                                Style="{DynamicResource GhostPillButtonStyle}"
+                                MinHeight="24"
+                                Padding="8,3"
+                                FontSize="10" />
+                    </StackPanel>
                 </Grid>
             </Border>
 
-            <!-- LibVLCSharp VideoView kept empty (no Content => no top-level ForegroundWindow) and Collapsed until actively playing -->
+            <!-- LibVLCSharp VideoView kept empty (no Content => no top-level ForegroundWindow) -->
             <vlc:VideoView x:Name="VideoViewControl"
                            Grid.Row="1"
                            Background="#000000"
                            Visibility="Collapsed" />
 
-            <!-- Pure WPF idle/status overlay sibling visible whenever stream is not actively playing -->
+            <!-- Pure WPF clickable idle/status overlay -->
             <Border x:Name="WpfIdleOverlay"
                     Grid.Row="1"
                     Background="#0A0A0A"
+                    Cursor="Hand"
+                    ToolTip="Büyük kamera popup'ını açmak için tıklayın"
+                    MouseLeftButtonUp="OnIdleOverlayClick"
                     Visibility="Visible">
                 <StackPanel VerticalAlignment="Center"
                             HorizontalAlignment="Center"
-                            Margin="16">
+                            Margin="12">
                     <TextBlock x:Name="IdleOverlayTitleText"
                                Text="SİNYAL BEKLENİYOR / KAMERA SEÇ"
                                FontFamily="{DynamicResource DisplayFontFamily}"
-                               FontSize="13"
+                               FontSize="12.5"
                                FontWeight="Bold"
                                Foreground="#FFFFFF"
                                HorizontalAlignment="Center"
@@ -88,12 +102,50 @@
                                Text="RTSP · UDP/RTP · USB DIRECTSHOW"
                                FontFamily="{DynamicResource UiFontFamily}"
                                FontSize="11"
-                               Foreground="#F0F0FA"
-                               Margin="0,6,0,0"
+                               Foreground="#9B9BA6"
+                               Margin="0,5,0,0"
                                HorizontalAlignment="Center"
                                TextAlignment="Center"
                                TextWrapping="Wrap" />
+                    <TextBlock Text="Büyük pencere için tıklayın ⛶"
+                               FontFamily="{DynamicResource UiFontFamily}"
+                               FontSize="10.5"
+                               Foreground="#6E6E78"
+                               Margin="0,6,0,0"
+                               HorizontalAlignment="Center" />
                 </StackPanel>
+            </Border>
+
+            <!-- Compact pure-WPF technical telemetry footer kept in Row 2 outside VideoView -->
+            <Border Grid.Row="2"
+                    Background="#050508"
+                    BorderBrush="#24242B"
+                    BorderThickness="0,1,0,0"
+                    Padding="8,4">
+                <Grid>
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition Width="Auto" />
+                    </Grid.ColumnDefinitions>
+                    <TextBlock x:Name="FooterSourceText"
+                               Grid.Column="0"
+                               Text="UDP/RTP · :5600"
+                               FontFamily="{DynamicResource UiFontFamily}"
+                               FontSize="10"
+                               Foreground="#9B9BA6"
+                               VerticalAlignment="Center"
+                               TextTrimming="CharacterEllipsis" />
+                    <TextBlock x:Name="FooterStatusText"
+                               Grid.Column="1"
+                               Text="BEKLİYOR"
+                               FontFamily="{DynamicResource UiFontFamily}"
+                               FontSize="10"
+                               Foreground="#D4D4DC"
+                               Margin="10,0,0,0"
+                               VerticalAlignment="Center"
+                               HorizontalAlignment="Right"
+                               TextTrimming="CharacterEllipsis" />
+                </Grid>
             </Border>
         </Grid>
     </Border>

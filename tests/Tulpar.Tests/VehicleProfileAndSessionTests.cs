@@ -663,4 +663,246 @@ public class VehicleProfileAndSessionTests
         Assert.Equal((byte)1, receivedAck.SystemId);
         Assert.Equal(MavCmd.ComponentArmDisarm, CommandAckMessage.Decode(receivedAck).Command);
     }
+
+    [Fact]
+    public void Session_HandlesExtendedTelemetryMessages_AndFiltersSecondaryBatteryAndComponents()
+    {
+        var session = new VehicleSession();
+
+        byte[] hb = EncodeV2(1, 1, 1, new HeartbeatMessage(
+            MavType.Quadrotor, MavAutopilot.ArduPilotMega, MavModeFlag.CustomModeEnabled, 4u, MavState.Active));
+        byte[] sys = EncodeV2(1, 1, 2, new SysStatusMessage(0x07, 0x07, 0x05, 345, 16800, 1450, 80, DropRateComm: 235));
+        byte[] bat0 = EncodeV2(1, 1, 3, new BatteryStatusMessage(
+            Id: 0,
+            BatteryFunction: MavBatteryFunction.Propulsion,
+            Type: MavBatteryType.Lipo,
+            Temperature: 3125,
+            Voltages: [4100, 4100, 4100, 4100, 65535, 65535, 65535, 65535, 65535, 65535],
+            CurrentBattery: 1500,
+            CurrentConsumed: 1850,
+            EnergyConsumed: 30000,
+            BatteryRemaining: 77));
+        // Secondary battery (Id=1) must be ignored
+        byte[] bat1 = EncodeV2(1, 1, 4, new BatteryStatusMessage(
+            Id: 1,
+            BatteryFunction: MavBatteryFunction.Payload,
+            Type: MavBatteryType.Lipo,
+            Temperature: 9900,
+            Voltages: [3000, 3000, 65535, 65535, 65535, 65535, 65535, 65535, 65535, 65535],
+            CurrentBattery: 9999,
+            CurrentConsumed: 9999,
+            EnergyConsumed: 99999,
+            BatteryRemaining: 5));
+        byte[] rc = EncodeV2(1, 1, 5, new RcChannelsMessage(
+            1000u,
+            10,
+            [1500, 1510, 1100, 1490, 1800, 1000, 2000, 1600, 1500, 1500, 0, 0, 0, 0, 0, 0, 0, 0],
+            80));
+        byte[] reached = EncodeV2(1, 1, 6, new MissionItemReachedMessage(7));
+        byte[] ekf = EncodeV2(1, 1, 7, new EkfStatusReportMessage(
+            EkfStatusFlags.Attitude | EkfStatusFlags.VelocityHoriz | EkfStatusFlags.PosHorizAbs,
+            0.1f, 0.2f, 0.3f, 0.05f, 0.02f));
+        byte[] vib = EncodeV2(1, 1, 8, new VibrationMessage(50000UL, 12.5f, 15.25f, 18.75f, 0, 1, 0));
+        byte[] extSys = EncodeV2(1, 1, 9, new ExtendedSysStateMessage(MavVtolState.Mc, MavLandedState.InAir));
+
+        // Secondary gimbal/camera component (compId=154) sending ATTITUDE and GLOBAL_POSITION_INT must NOT overwrite autopilot telemetry
+        byte[] gimbalAttitude = EncodeV2(1, 154, 1, new AttitudeMessage(999u, 1.5f, -1.5f, 3.0f));
+        byte[] cameraSysStatus = EncodeV2(1, 100, 1, new SysStatusMessage(0, 0, 0, 999, 5000, 100, 1, DropRateComm: 9900));
+
+        session.ProcessIncomingBytes([
+            ..hb, ..sys, ..bat0, ..bat1, ..rc, ..reached, ..ekf, ..vib, ..extSys, ..gimbalAttitude, ..cameraSysStatus
+        ]);
+
+        TelemetrySnapshot cur = session.Current;
+        Assert.Equal(34.5, cur.CpuLoadPercent, 2);
+        Assert.Equal(2.35, cur.DropRateCommPercent, 2);
+        Assert.Equal(0x05u, cur.SensorHealthBits);
+
+        Assert.Equal(16.4, cur.BatteryVoltageVolts, 2);
+        Assert.Equal(1850, cur.BatteryCurrentConsumedMah);
+        Assert.Equal(31.25, cur.BatteryTemperatureCelsius, 2);
+        Assert.Equal(77, cur.BatteryRemainingPercent);
+
+        Assert.Equal(10, cur.RcChannelCount);
+        Assert.Equal((ushort)1500, cur.RcCh1);
+        Assert.Equal((ushort)1510, cur.RcCh2);
+        Assert.Equal((ushort)1100, cur.RcCh3);
+        Assert.Equal((ushort)1490, cur.RcCh4);
+        Assert.Equal((ushort)1800, cur.RcCh5);
+        Assert.Equal((ushort)1000, cur.RcCh6);
+        Assert.Equal((ushort)2000, cur.RcCh7);
+        Assert.Equal((ushort)1600, cur.RcCh8);
+        Assert.Equal(8, cur.RcChannels.Count);
+
+        Assert.Equal(7, cur.LastReachedWaypointSeq);
+        Assert.Equal((ushort)(EkfStatusFlags.Attitude | EkfStatusFlags.VelocityHoriz | EkfStatusFlags.PosHorizAbs), cur.EkfFlags);
+        Assert.Equal(12.5f, cur.VibrationX);
+        Assert.Equal(15.25f, cur.VibrationY);
+        Assert.Equal(18.75f, cur.VibrationZ);
+        Assert.Equal(MavVtolState.Mc, cur.VtolState);
+        Assert.Equal(MavLandedState.InAir, cur.LandedState);
+
+        // Gimbal attitude must not have overwritten RollDeg (still 0.0)
+        Assert.Equal(0.0, cur.RollDeg);
+    }
+
+    [Fact]
+    public void Session_AutoLockAndExplicitSwap_PreventsMultiSystemThrashing()
+    {
+        var session = new VehicleSession { AutoLockOnFirstHeartbeat = true };
+
+        byte[] sys1Hb = EncodeV2(1, 1, 1, new HeartbeatMessage(
+            MavType.Quadrotor, MavAutopilot.ArduPilotMega, MavModeFlag.CustomModeEnabled, 4u, MavState.Active));
+        byte[] sys2Hb = EncodeV2(2, 1, 1, new HeartbeatMessage(
+            MavType.FixedWing, MavAutopilot.Px4, MavModeFlag.CustomModeEnabled, PackPx4CustomMode(4, 4), MavState.Standby));
+        byte[] sys2Pos = EncodeV2(2, 1, 2, new GlobalPositionIntMessage(100u, 399250180, 328369560, 100000, 50000));
+
+        session.ProcessIncomingBytes(sys1Hb);
+        Assert.Equal((byte)1, session.LockedSystemId);
+        Assert.Equal((byte)1, session.Current.SystemId);
+
+        // Second vehicle heartbeats & telemetry must not hijack locked session
+        session.ProcessIncomingBytes([..sys2Hb, ..sys2Pos]);
+        Assert.Equal((byte)1, session.Current.SystemId);
+        Assert.Equal(VehicleCategory.Multirotor, session.Current.VehicleCategory);
+        Assert.Equal(0.0, session.Current.Latitude);
+
+        // Explicit swap moves lock to system 2 and wipes system 1 state
+        session.SelectSystem(2);
+        Assert.Equal((byte)2, session.LockedSystemId);
+        Assert.Equal((byte)0, session.Current.SystemId);
+
+        session.ProcessIncomingBytes([..sys2Hb, ..sys2Pos]);
+        Assert.Equal((byte)2, session.Current.SystemId);
+        Assert.Equal(VehicleCategory.FixedWing, session.Current.VehicleCategory);
+        Assert.Equal(39.9250180, session.Current.Latitude, 7);
+
+        // Unlock allows switching back freely
+        session.UnlockSystem();
+        Assert.Null(session.LockedSystemId);
+        session.ProcessIncomingBytes(sys1Hb);
+        Assert.Equal((byte)1, session.Current.SystemId);
+    }
+
+    [Fact]
+    public void Session_ResetOnDisconnectMidDispatch_DropsStaleBatchEventsViaSessionEpoch()
+    {
+        var session = new VehicleSession();
+        var observedSnapshots = new List<TelemetrySnapshot>();
+        var observedStatuses = new List<StatusTextMessage>();
+        bool triggeredReset = false;
+
+        session.Bus.SnapshotUpdated += snap =>
+        {
+            observedSnapshots.Add(snap);
+            if (!triggeredReset && snap.IsConnected)
+            {
+                triggeredReset = true;
+                session.ResetOnDisconnect();
+            }
+        };
+        session.Bus.StatusTextReceived += observedStatuses.Add;
+
+        byte[] batch =
+        [
+            ..EncodeV2(1, 1, 1, new HeartbeatMessage(MavType.Quadrotor, MavAutopilot.ArduPilotMega, MavModeFlag.CustomModeEnabled, 4u, MavState.Active)),
+            ..EncodeV2(1, 1, 2, new GlobalPositionIntMessage(100u, 399250180, 328369560, 100000, 50000)),
+            ..EncodeV2(1, 1, 3, new StatusTextMessage(MavSeverity.Warning, "STALE BATCH STATUS"))
+        ];
+
+        session.ProcessIncomingBytes(batch);
+
+        // First snapshot (connected) triggered ResetOnDisconnect, which emitted Empty.
+        // The queued GlobalPositionInt snapshot and StatusText from the pre-reset epoch must be dropped!
+        Assert.Equal(2, observedSnapshots.Count);
+        Assert.True(observedSnapshots[0].IsConnected);
+        Assert.False(observedSnapshots[1].IsConnected);
+        Assert.Empty(observedStatuses);
+    }
+
+    [Fact]
+    public async Task ParameterProtocolManager_DownloadsAllWithMissingIndexRecovery_AndVerifiesSetEcho()
+    {
+        var manager = new ParameterProtocolManager(255, 190, stepTimeoutMs: 60, maxRetries: 2);
+        var parser = new MavlinkParser();
+        byte vehicleSeq = 0;
+        var progressReports = new List<ParameterTransferProgress>();
+        var progress = new RecordingParamProgress(progressReports);
+
+        var vehicleParams = new (string Name, float Value, MavParamType Type)[]
+        {
+            ("SYSID_THISMAV", 1f, MavParamType.Uint8),
+            ("WPNAV_SPEED", 1200f, MavParamType.Real32),
+            ("BATT_CAPACITY", 5200f, MavParamType.Int32)
+        };
+
+        int readRequests = 0;
+
+        Task SendAsync(byte[] bytes, CancellationToken ct)
+        {
+            foreach (MavlinkFrame frame in parser.Feed(bytes))
+            {
+                if (frame.MessageId == ParamRequestListMessage.MsgId)
+                {
+                    // Send index 0 and 2, intentionally drop index 1 to trigger PARAM_REQUEST_READ recovery
+                    foreach (ushort idx in new ushort[] { 0, 2 })
+                    {
+                        var p = vehicleParams[idx];
+                        var pv = new ParamValueMessage(p.Name, p.Value, p.Type, (ushort)vehicleParams.Length, idx);
+                        manager.HandleIncomingFrame(
+                            parser.Feed(MavlinkEncoder.EncodeV2(1, 1, vehicleSeq++, pv)).Single());
+                    }
+                }
+                else if (frame.MessageId == ParamRequestReadMessage.MsgId)
+                {
+                    readRequests++;
+                    var req = ParamRequestReadMessage.Decode(frame);
+                    ushort idx = req.ParamIndex >= 0
+                        ? (ushort)req.ParamIndex
+                        : (ushort)Array.FindIndex(vehicleParams, x => x.Name == req.ParamId);
+                    var p = vehicleParams[idx];
+                    var pv = new ParamValueMessage(p.Name, p.Value, p.Type, (ushort)vehicleParams.Length, idx);
+                    manager.HandleIncomingFrame(
+                        parser.Feed(MavlinkEncoder.EncodeV2(1, 1, vehicleSeq++, pv)).Single());
+                }
+                else if (frame.MessageId == ParamSetMessage.MsgId)
+                {
+                    var set = ParamSetMessage.Decode(frame);
+                    // Simulate vehicle rejecting/clamping "READONLY_PARAM"
+                    float echoedVal = set.ParamId == "READONLY_PARAM" ? 999f : set.ParamValue;
+                    var pv = new ParamValueMessage(set.ParamId, echoedVal, set.ParamType, 3, 1);
+                    manager.HandleIncomingFrame(
+                        parser.Feed(MavlinkEncoder.EncodeV2(1, 1, vehicleSeq++, pv)).Single());
+                }
+            }
+
+            return Task.CompletedTask;
+        }
+
+        IReadOnlyDictionary<string, VehicleParameter> all = await manager.RequestAllParametersAsync(
+            1, 1, SendAsync, progress, CancellationToken.None);
+
+        Assert.Equal(1, readRequests);
+        Assert.Equal(3, all.Count);
+        Assert.Equal(3, manager.TotalParameterCount);
+        Assert.Equal(1200f, all["WPNAV_SPEED"].Value);
+        Assert.Equal("Completed", progressReports.Last().Stage);
+        Assert.Equal(3, progressReports.Last().ReceivedCount);
+
+        VehicleParameter single = await manager.RequestParameterAsync(1, 1, "BATT_CAPACITY", SendAsync, CancellationToken.None);
+        Assert.Equal(5200f, single.Value);
+
+        VehicleParameter updated = await manager.SetParameterAsync(
+            1, 1, "WPNAV_SPEED", 1500f, MavParamType.Real32, SendAsync, CancellationToken.None);
+        Assert.Equal(1500f, updated.Value);
+        Assert.Equal(1500f, manager.Parameters["WPNAV_SPEED"].Value);
+
+        await Assert.ThrowsAsync<ParameterProtocolException>(() =>
+            manager.SetParameterAsync(1, 1, "READONLY_PARAM", 10f, MavParamType.Real32, SendAsync, CancellationToken.None));
+    }
+
+    private sealed class RecordingParamProgress(List<ParameterTransferProgress> reports) : IProgress<ParameterTransferProgress>
+    {
+        public void Report(ParameterTransferProgress value) => reports.Add(value);
+    }
 }

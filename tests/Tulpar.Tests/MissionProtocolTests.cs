@@ -30,7 +30,8 @@ public class MissionProtocolTests
 
         var requestedOrder = new ushort[] { 0, 2, 0, 1 };
         int requestStep = 0;
-        var uploadedItems = new List<MissionItemIntMessage>();
+        var uploadedItems = new List<(uint MessageId, ushort Seq)>();
+        var uploadedIntItems = new List<MissionItemIntMessage>();
         int missionCountPackets = 0;
         byte vehicleSeq = 0;
 
@@ -61,10 +62,22 @@ public class MissionProtocolTests
                         MissionRequestMessage.MsgCrcExtra);
                     manager.HandleIncomingFrame(ParseOutgoingPacket(rawV1).Single());
                 }
-                else if (frame.MessageId == MissionItemIntMessage.MsgId)
+                else if (frame.MessageId is MissionItemIntMessage.MsgId or MissionItemMessage.MsgId)
                 {
-                    var itemMsg = MissionItemIntMessage.Decode(frame);
-                    uploadedItems.Add(itemMsg);
+                    ushort receivedSeq;
+                    if (frame.MessageId == MissionItemIntMessage.MsgId)
+                    {
+                        var itemMsg = MissionItemIntMessage.Decode(frame);
+                        uploadedIntItems.Add(itemMsg);
+                        receivedSeq = itemMsg.Seq;
+                    }
+                    else
+                    {
+                        var legacyItemMsg = MissionItemMessage.Decode(frame);
+                        receivedSeq = legacyItemMsg.Seq;
+                    }
+
+                    uploadedItems.Add((frame.MessageId, receivedSeq));
 
                     if (requestStep < requestedOrder.Length)
                     {
@@ -102,6 +115,10 @@ public class MissionProtocolTests
 
         Assert.Equal(1, missionCountPackets);
         Assert.Equal(new ushort[] { 0, 2, 0, 1 }, uploadedItems.Select(x => x.Seq).ToArray());
+        // Legacy MISSION_REQUEST (#40) for seq 0 must reply with MISSION_ITEM (#39); MISSION_REQUEST_INT (#51) replies with MISSION_ITEM_INT (#73).
+        Assert.Equal(
+            [MissionItemMessage.MsgId, MissionItemIntMessage.MsgId, MissionItemMessage.MsgId, MissionItemIntMessage.MsgId],
+            uploadedItems.Select(x => x.MessageId).ToArray());
 
         // Duplicate seq 0 must not push CompletedCount past TotalCount (3).
         Assert.Equal("Starting", progressReports.First().Stage);
@@ -109,7 +126,7 @@ public class MissionProtocolTests
         Assert.Equal(3, progressReports.Last().CompletedCount);
         Assert.All(progressReports, p => Assert.InRange(p.CompletedCount, 0, p.TotalCount));
 
-        MissionItemIntMessage wp1 = uploadedItems.Last(x => x.Seq == 1);
+        MissionItemIntMessage wp1 = uploadedIntItems.Last(x => x.Seq == 1);
         Assert.Equal(MavFrame.GlobalRelativeAltInt, wp1.Frame);
         Assert.Equal(MavCmd.NavWaypoint, wp1.Command);
         Assert.Equal(410123456, wp1.X);
@@ -118,7 +135,7 @@ public class MissionProtocolTests
         Assert.Equal((byte)1, wp1.Autocontinue);
         Assert.Equal(90f, wp1.Param4);
 
-        MissionItemIntMessage rtl = uploadedItems.First(x => x.Seq == 2);
+        MissionItemIntMessage rtl = uploadedIntItems.First(x => x.Seq == 2);
         Assert.Equal(MavFrame.GlobalInt, rtl.Frame);
         Assert.Equal(MavCmd.NavReturnToLaunch, rtl.Command);
         Assert.Equal((byte)0, rtl.Autocontinue);
@@ -172,15 +189,27 @@ public class MissionProtocolTests
                     manager.HandleIncomingFrame(ParseOutgoingPacket(
                         MavlinkEncoder.EncodeV2(VehicleSysId, VehicleCompId, vehicleSeq++, req0)).Single());
                 }
-                else if (frame.MessageId == MissionItemIntMessage.MsgId)
+                else if (frame.MessageId is MissionItemIntMessage.MsgId or MissionItemMessage.MsgId)
                 {
-                    var itemMsg = MissionItemIntMessage.Decode(frame);
-                    Assert.Equal(MavMissionType.Fence, itemMsg.MissionType);
-                    receivedFenceSeqs.Add(itemMsg.Seq);
-
-                    if (itemMsg.Seq < 3)
+                    ushort seq;
+                    if (frame.MessageId == MissionItemIntMessage.MsgId)
                     {
-                        ushort next = (ushort)(itemMsg.Seq + 1);
+                        var itemMsg = MissionItemIntMessage.Decode(frame);
+                        Assert.Equal(MavMissionType.Fence, itemMsg.MissionType);
+                        seq = itemMsg.Seq;
+                    }
+                    else
+                    {
+                        var legacyItemMsg = MissionItemMessage.Decode(frame);
+                        Assert.Equal(MavMissionType.Fence, legacyItemMsg.MissionType);
+                        seq = legacyItemMsg.Seq;
+                    }
+
+                    receivedFenceSeqs.Add(seq);
+
+                    if (seq < 3)
+                    {
+                        ushort next = (ushort)(seq + 1);
                         // Also verify legacy MAVLink v1 MISSION_REQUEST (4-byte payload, no mission_type) matches active Fence transfer.
                         if (next == 1)
                         {
@@ -719,6 +748,162 @@ public class MissionProtocolTests
 
         Assert.Equal(3, log.Count);
         Assert.Equal(["upload:count", "upload:item", "clear:send"], log);
+    }
+
+    [Fact]
+    public async Task ClearAll_AllType_AcceptsMissionTypeMissionAck()
+    {
+        var manager = new MissionProtocolManager(GcsSysId, GcsCompId, stepTimeoutMs: 100, maxRetries: 1);
+
+        Task SendAsync(byte[] bytes, CancellationToken ct)
+        {
+            MavlinkFrame frame = ParseOutgoingPacket(bytes).Single();
+            var clearMsg = MissionClearAllMessage.Decode(frame);
+            Assert.Equal(MavMissionType.All, clearMsg.MissionType);
+
+            // Autopilot responds to CLEAR_ALL(All) with MISSION_ACK(Mission=0, Accepted)
+            var ack = new MissionAckMessage(GcsSysId, GcsCompId, MavMissionResult.Accepted, MavMissionType.Mission);
+            manager.HandleIncomingFrame(ParseOutgoingPacket(
+                MavlinkEncoder.EncodeV2(VehicleSysId, VehicleCompId, 0, ack)).Single());
+            return Task.CompletedTask;
+        }
+
+        await manager.ClearAllAsync(VehicleSysId, VehicleCompId, MavMissionType.All, SendAsync, CancellationToken.None);
+    }
+
+    [Fact]
+    public async Task UploadMission_RejectsPrematureAcceptedAckBeforeAllItemsSent()
+    {
+        var manager = new MissionProtocolManager(GcsSysId, GcsCompId, stepTimeoutMs: 100, maxRetries: 1);
+        var items = new[]
+        {
+            new MissionItem(0, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0, 0, 0, 0, 41.0, 29.0, 40f),
+            new MissionItem(1, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0, 0, 0, 0, 41.01, 29.01, 50f)
+        };
+
+        Task SendAsync(byte[] bytes, CancellationToken ct)
+        {
+            MavlinkFrame frame = ParseOutgoingPacket(bytes).Single();
+            if (frame.MessageId == MissionCountMessage.MsgId)
+            {
+                // Premature Accepted ACK before any item is requested/sent
+                var prematureAck = new MissionAckMessage(GcsSysId, GcsCompId, MavMissionResult.Accepted, MavMissionType.Mission);
+                manager.HandleIncomingFrame(ParseOutgoingPacket(
+                    MavlinkEncoder.EncodeV2(VehicleSysId, VehicleCompId, 0, prematureAck)).Single());
+            }
+
+            return Task.CompletedTask;
+        }
+
+        await Assert.ThrowsAsync<MissionProtocolException>(() =>
+            manager.UploadAsync(VehicleSysId, VehicleCompId, MavMissionType.Mission, items, SendAsync, null, CancellationToken.None));
+    }
+
+    [Fact]
+    public async Task UploadMission_InvalidOrNonFiniteCoordinates_ThrowsWithoutSending()
+    {
+        var manager = new MissionProtocolManager(GcsSysId, GcsCompId, stepTimeoutMs: 50, maxRetries: 1);
+        bool sent = false;
+
+        MissionItem[] invalidSets =
+        [
+            new(0, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0, 0, 0, 0, double.NaN, 29.0, 50f),
+            new(0, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0, 0, 0, 0, 91.0, 29.0, 50f),
+            new(0, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0, 0, 0, 0, 41.0, -181.0, 50f),
+            new(0, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0, 0, 0, 0, 41.0, 29.0, float.PositiveInfinity)
+        ];
+
+        foreach (MissionItem badItem in invalidSets)
+        {
+            await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+                manager.UploadAsync(
+                    VehicleSysId,
+                    VehicleCompId,
+                    MavMissionType.Mission,
+                    [badItem],
+                    (_, _) => { sent = true; return Task.CompletedTask; },
+                    null,
+                    CancellationToken.None));
+        }
+
+        Assert.False(sent);
+    }
+
+    [Fact]
+    public void MissionFileCodec_RejectsNaNInfinityAndNullItemsAtomically()
+    {
+        var valid = new MissionItem(0, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0, 0, 0, 0, 41.0, 29.0, 50f);
+        var withNaN = new MissionItem(1, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0, 0, 0, 0, double.NaN, 29.0, 50f);
+        var withInfParam = new MissionItem(1, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, float.PositiveInfinity, 0, 0, 0, 41.0, 29.0, 50f);
+
+        Assert.Throws<ArgumentException>(() => MissionFileCodec.ExportQgcWpl110([valid, withNaN]));
+        Assert.Throws<ArgumentException>(() => MissionFileCodec.ExportQgcWpl110([valid, withInfParam]));
+        Assert.Throws<ArgumentException>(() => MissionFileCodec.ExportQgcWpl110([valid, null!]));
+
+        Assert.Throws<FormatException>(() => MissionFileCodec.ImportQgcWpl110(
+            "QGC WPL 110\n0\t1\t3\t16\t0\t0\t0\t0\t41.0\t29.0\t50\t1\n1\t0\t3\t16\t0\t0\t0\t0\tNaN\t29.0\t50\t1\n"));
+        Assert.Throws<FormatException>(() => MissionFileCodec.ImportQgcWpl110(
+            "QGC WPL 110\n0\t1\t3\t16\tInfinity\t0\t0\t0\t41.0\t29.0\t50\t1\n"));
+
+        Assert.Throws<ArgumentException>(() => MissionFileCodec.ExportJson(
+            new MissionDocument(MavMissionType.Mission, [valid, null!], [])));
+        Assert.Throws<ArgumentException>(() => MissionFileCodec.ExportJson(
+            new MissionDocument(MavMissionType.Mission, [valid], [withNaN])));
+
+        string jsonWithNullItem = """
+            {
+              "missionType": "Mission",
+              "items": [
+                { "seq": 0, "frame": "GlobalRelativeAltInt", "command": "NavWaypoint", "param1": 0, "param2": 0, "param3": 0, "param4": 0, "latitude": 41.0, "longitude": 29.0, "altitude": 50, "autocontinue": true },
+                null
+              ],
+              "fenceItems": []
+            }
+            """;
+        Assert.Throws<FormatException>(() => MissionFileCodec.ImportJson(jsonWithNullItem));
+    }
+
+    [Fact]
+    public void FlightMetricsEstimator_ComputesDistanceDurationBearingsAndElevationProfile()
+    {
+        FlightMetricsSummary empty = FlightMetricsEstimator.Estimate(Array.Empty<MissionItem>(), cruiseSpeedMps: 15.0);
+        Assert.Equal(0.0, empty.TotalDistanceMeters);
+        Assert.Equal(TimeSpan.Zero, empty.EstimatedFlightDuration);
+        Assert.Empty(empty.Legs);
+
+        // Build simple north -> east -> non-positional DO_CHANGE_SPEED -> RTL mission
+        var items = new List<MissionItem>
+        {
+            new(0, MavFrame.GlobalRelativeAltInt, MavCmd.NavTakeoff, 0, 0, 0, 0, 0.001, 0.0, 30f),
+            new(1, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0, 0, 0, 0, 0.011, 0.0, 80f), // ~1.112 km due North
+            new(2, MavFrame.GlobalRelativeAltInt, MavCmd.DoChangeSpeed, 0, 20f, 0, 0, 0.0, 0.0, 0f), // non-positional
+            new(3, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0, 0, 0, 0, 0.011, 0.010, 60f), // ~1.112 km due East
+            new(4, MavFrame.GlobalRelativeAltInt, MavCmd.NavReturnToLaunch, 0, 0, 0, 0, 0.0, 0.0, 25f) // falls back to home
+        };
+
+        var home = (Latitude: 0.001, Longitude: 0.0, AltitudeMeters: 0.0);
+        FlightMetricsSummary summary = FlightMetricsEstimator.Estimate(items, cruiseSpeedMps: 10.0, homePosition: home);
+
+        Assert.Equal(5, summary.Legs.Count);
+        Assert.Equal(0.0, summary.Legs[0].LegDistanceMeters, 3);
+        Assert.InRange(summary.Legs[1].LegDistanceMeters, 1100.0, 1125.0);
+        Assert.InRange(summary.Legs[1].LegBearingDeg, 0.0, 0.5);
+        Assert.Equal(0.0, summary.Legs[2].LegDistanceMeters);
+        Assert.Equal(summary.Legs[1].CumulativeDistanceMeters, summary.Legs[2].CumulativeDistanceMeters);
+        Assert.Equal(80.0, summary.Legs[2].AltitudeMeters);
+        Assert.InRange(summary.Legs[3].LegDistanceMeters, 1100.0, 1125.0);
+        Assert.InRange(summary.Legs[3].LegBearingDeg, 89.5, 90.5);
+        Assert.True(summary.Legs[4].LegDistanceMeters > 1500.0); // Diagonal RTL back to home
+
+        Assert.Equal(summary.Legs[^1].CumulativeDistanceMeters, summary.TotalDistanceMeters, 6);
+        Assert.Equal(summary.TotalDistanceMeters / 10.0, summary.EstimatedFlightDuration.TotalSeconds, 3);
+        Assert.Equal(25.0, summary.MinAltitudeMeters, 3);
+        Assert.Equal(80.0, summary.MaxAltitudeMeters, 3);
+        Assert.Equal(80.0, summary.TotalAscentMeters, 3); // 0->30->80
+        Assert.Equal(55.0, summary.TotalDescentMeters, 3); // 80->60->25
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => FlightMetricsEstimator.Estimate(items, cruiseSpeedMps: 0.0));
+        Assert.Throws<ArgumentOutOfRangeException>(() => FlightMetricsEstimator.Estimate(items, cruiseSpeedMps: double.NaN));
     }
 
     private sealed class RecordingProgress(List<MissionTransferProgress> reports) : IProgress<MissionTransferProgress>

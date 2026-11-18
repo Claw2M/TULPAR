@@ -40,6 +40,10 @@ public static class MavlinkCrc
             case 1: crcExtra = 124; return true;    // SYS_STATUS
             case 2: crcExtra = 137; return true;    // SYSTEM_TIME
             case 11: crcExtra = 89; return true;    // SET_MODE
+            case 20: crcExtra = 214; return true;   // PARAM_REQUEST_READ
+            case 21: crcExtra = 159; return true;   // PARAM_REQUEST_LIST
+            case 22: crcExtra = 220; return true;   // PARAM_VALUE
+            case 23: crcExtra = 168; return true;   // PARAM_SET
             case 24: crcExtra = 24; return true;    // GPS_RAW_INT
             case 30: crcExtra = 39; return true;    // ATTITUDE
             case 33: crcExtra = 104; return true;   // GLOBAL_POSITION_INT
@@ -62,7 +66,10 @@ public static class MavlinkCrc
             case 86: crcExtra = 5; return true;     // SET_POSITION_TARGET_GLOBAL_INT
             case 109: crcExtra = 185; return true;  // RADIO_STATUS
             case 147: crcExtra = 154; return true;  // BATTERY_STATUS
+            case 193: crcExtra = 71; return true;   // EKF_STATUS_REPORT
+            case 241: crcExtra = 90; return true;   // VIBRATION
             case 242: crcExtra = 104; return true;  // HOME_POSITION
+            case 245: crcExtra = 130; return true;  // EXTENDED_SYS_STATE
             case 253: crcExtra = 83; return true;   // STATUSTEXT
             default:
                 crcExtra = 0;

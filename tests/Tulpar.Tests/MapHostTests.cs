@@ -243,6 +243,10 @@ public sealed class MapHostTests : IDisposable
             MinZoom: 1,
             IsBuiltIn: false));
 
+        Assert.Contains(server.GetProviders(), p => p.Id == BuiltInTileProviders.GoogleSatelliteHd.Id && p.MaxZoom == 21);
+        Assert.Contains(server.GetProviders(), p => p.Id == BuiltInTileProviders.GoogleHybridHd.Id && p.MaxZoom == 21);
+        Assert.Contains(server.GetProviders(), p => p.Id == BuiltInTileProviders.EsriClarity.Id);
+        Assert.Contains(server.GetProviders(), p => p.Id == BuiltInTileProviders.GoogleStreetHd.Id && p.MaxZoom == 21);
         Assert.Contains(server.GetProviders(), p => p.Id == BuiltInTileProviders.Satellite.Id);
         Assert.Contains(server.GetProviders(), p => p.Id == BuiltInTileProviders.Street.Id);
         Assert.Contains(server.GetProviders(), p => p.Id == BuiltInTileProviders.Topo.Id);
@@ -301,6 +305,43 @@ public sealed class MapHostTests : IDisposable
         Assert.Equal(HttpStatusCode.OK, headResp.StatusCode);
         Assert.Equal(mbtilesTile.Length, headResp.Content.Headers.ContentLength);
         Assert.Empty(await headResp.Content.ReadAsByteArrayAsync());
+    }
+
+    [Fact]
+    public async Task MapHttpServer_HdBuiltInProviders_ExposeMaxZoom21AndServeZoom21Tiles()
+    {
+        string dbPath = Path.Combine(_tempDir, "hd-layers.db");
+        using var cache = new TileCacheStore(dbPath);
+        string? requestedUpstreamUrl = null;
+        using var mockHandler = new DelegateHttpMessageHandler((req, _) =>
+        {
+            requestedUpstreamUrl = req.RequestUri!.ToString();
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new ByteArrayContent(SampleJpegTile)
+            });
+        });
+
+        using var upstreamHttp = new HttpClient(mockHandler);
+        await using var server = new MapHttpServer(cache, upstreamHttp);
+        await server.StartAsync();
+
+        using var client = new HttpClient { BaseAddress = server.BaseUri };
+        string layersJson = await client.GetStringAsync("/api/layers");
+        using var doc = System.Text.Json.JsonDocument.Parse(layersJson);
+        var byId = doc.RootElement.EnumerateArray()
+            .ToDictionary(e => e.GetProperty("id").GetString()!, StringComparer.OrdinalIgnoreCase);
+
+        Assert.Equal(21, byId[BuiltInTileProviders.GoogleSatelliteHd.Id].GetProperty("maxZoom").GetInt32());
+        Assert.Equal(21, byId[BuiltInTileProviders.GoogleHybridHd.Id].GetProperty("maxZoom").GetInt32());
+        Assert.Equal(21, byId[BuiltInTileProviders.GoogleStreetHd.Id].GetProperty("maxZoom").GetInt32());
+        Assert.Equal(19, byId[BuiltInTileProviders.EsriClarity.Id].GetProperty("maxZoom").GetInt32());
+
+        HttpResponseMessage z21Resp = await client.GetAsync("/tiles/google-satellite-hd/21/1239997/794444");
+        Assert.Equal(HttpStatusCode.OK, z21Resp.StatusCode);
+        Assert.Equal("image/jpeg", z21Resp.Content.Headers.ContentType?.MediaType);
+        Assert.Equal(SampleJpegTile, await z21Resp.Content.ReadAsByteArrayAsync());
+        Assert.Equal("https://mt1.google.com/vt/lyrs=s&scale=2&x=1239997&y=794444&z=21", requestedUpstreamUrl);
     }
 
     [Fact]
@@ -592,6 +633,305 @@ public sealed class MapHostTests : IDisposable
         {
             TaskScheduler.UnobservedTaskException -= onUnobserved;
         }
+    }
+
+    [Fact]
+    public void MbtilesReader_MalformedTilesSchema_ThrowsInvalidDataException_AndQueryFaultReturnsNull()
+    {
+        // 1. Missing required columns in 'tiles' table
+        string missingColPath = Path.Combine(_tempDir, "missing-column.mbtiles");
+        using (var conn = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = missingColPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
+        }.ConnectionString))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "CREATE TABLE tiles (zoom_level INTEGER, tile_column INTEGER, tile_data BLOB);";
+            cmd.ExecuteNonQuery();
+        }
+
+        InvalidDataException colEx = Assert.Throws<InvalidDataException>(() => new MbtilesReader(missingColPath));
+        Assert.Contains("tile_row", colEx.Message, StringComparison.Ordinal);
+
+        // 2. Missing 'tiles' table completely
+        string missingTablePath = Path.Combine(_tempDir, "missing-table.mbtiles");
+        using (var conn = new SqliteConnection(new SqliteConnectionStringBuilder
+        {
+            DataSource = missingTablePath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
+        }.ConnectionString))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = "CREATE TABLE metadata (name TEXT, value TEXT);";
+            cmd.ExecuteNonQuery();
+        }
+
+        Assert.Throws<InvalidDataException>(() => new MbtilesReader(missingTablePath));
+
+        // 3. View backed by a table dropped after open -> TryGetTileXyz catches SqliteException cleanly
+        string brokenViewPath = Path.Combine(_tempDir, "broken-view.mbtiles");
+        string brokenViewCs = new SqliteConnectionStringBuilder
+        {
+            DataSource = brokenViewPath,
+            Mode = SqliteOpenMode.ReadWriteCreate,
+            Pooling = false
+        }.ConnectionString;
+
+        using (var conn = new SqliteConnection(brokenViewCs))
+        {
+            conn.Open();
+            using SqliteCommand cmd = conn.CreateCommand();
+            cmd.CommandText = """
+                CREATE TABLE backing_tiles (zoom_level INTEGER, tile_column INTEGER, tile_row INTEGER, tile_data BLOB);
+                CREATE VIEW tiles AS SELECT zoom_level, tile_column, tile_row, tile_data FROM backing_tiles;
+                """;
+            cmd.ExecuteNonQuery();
+        }
+
+        using var reader = new MbtilesReader(brokenViewPath);
+        using (var dropConn = new SqliteConnection(brokenViewCs))
+        {
+            dropConn.Open();
+            using SqliteCommand dropCmd = dropConn.CreateCommand();
+            dropCmd.CommandText = "DROP TABLE backing_tiles;";
+            dropCmd.ExecuteNonQuery();
+        }
+
+        Assert.Null(reader.TryGetTileXyz(0, 0, 0));
+    }
+
+    [Fact]
+    public async Task MapHttpServer_TileFaultIsolation_ReturnsCleanHttpErrorWithoutCrashing()
+    {
+        string dbPath = Path.Combine(_tempDir, "fault-isolation.db");
+        string mbtilesPath = Path.Combine(_tempDir, "healthy.mbtiles");
+        CreateSampleMbtiles(mbtilesPath, "Healthy", "png", [(0, 0, 0, SamplePngTile)]);
+
+        var unobserved = new List<Exception>();
+        EventHandler<UnobservedTaskExceptionEventArgs> onUnobserved = (_, args) =>
+        {
+            lock (unobserved)
+            {
+                unobserved.Add(args.Exception);
+            }
+            args.SetObserved();
+        };
+        TaskScheduler.UnobservedTaskException += onUnobserved;
+
+        try
+        {
+            using var cache = new TileCacheStore(dbPath);
+            await using var server = new MapHttpServer(cache);
+            string mbLayerId = server.RegisterMbtiles(mbtilesPath);
+            await server.StartAsync();
+
+            // Drop the cache table externally to force SqliteException on XYZ tile lookup
+            using (var conn = new SqliteConnection(new SqliteConnectionStringBuilder
+            {
+                DataSource = dbPath,
+                Mode = SqliteOpenMode.ReadWrite,
+                Pooling = false
+            }.ConnectionString))
+            {
+                conn.Open();
+                using SqliteCommand drop = conn.CreateCommand();
+                drop.CommandText = "DROP TABLE tiles;";
+                drop.ExecuteNonQuery();
+            }
+
+            using var client = new HttpClient { BaseAddress = server.BaseUri };
+
+            HttpResponseMessage faultResp = await client.GetAsync("/tiles/street/10/600/380");
+            Assert.Equal(HttpStatusCode.InternalServerError, faultResp.StatusCode);
+
+            // Server and unaffected routes remain healthy after faulted tile request
+            HttpResponseMessage healthResp = await client.GetAsync("/health");
+            Assert.Equal(HttpStatusCode.OK, healthResp.StatusCode);
+
+            HttpResponseMessage mbResp = await client.GetAsync($"/tiles/{mbLayerId}/0/0/0");
+            Assert.Equal(HttpStatusCode.OK, mbResp.StatusCode);
+            Assert.Equal(SamplePngTile, await mbResp.Content.ReadAsByteArrayAsync());
+
+            await server.DisposeAsync();
+
+            GC.Collect();
+            GC.WaitForPendingFinalizers();
+            GC.Collect();
+
+            lock (unobserved)
+            {
+                Assert.Empty(unobserved);
+            }
+        }
+        finally
+        {
+            TaskScheduler.UnobservedTaskException -= onUnobserved;
+        }
+    }
+
+    [Fact]
+    public async Task OfflineRegionDownloader_InvalidZoomAndBounds_ThrowsAndRespectsRequestTimeout()
+    {
+        string dbPath = Path.Combine(_tempDir, "invalid-bounds.db");
+        using var cache = new TileCacheStore(dbPath);
+        var provider = new TileProviderConfig(
+            "test-topo",
+            "Test Topo",
+            "https://tiles.local/{z}/{x}/{y}.png",
+            MaxZoom: 14,
+            MinZoom: 2);
+
+        // 1. Invalid bounds / zoom / tile limit throw ArgumentOutOfRangeException
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            OfflineRegionDownloader.EnumerateTiles(double.NaN, 32.0, 40.0, 33.0, 5, 10, 100));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            OfflineRegionDownloader.EnumerateTiles(39.0, double.PositiveInfinity, 40.0, 33.0, 5, 10, 100));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            OfflineRegionDownloader.EnumerateTiles(39.0, 32.0, 40.0, 33.0, -1, 10, 100));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            OfflineRegionDownloader.EnumerateTiles(39.0, 32.0, 40.0, 33.0, 5, 23, 100));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            OfflineRegionDownloader.EnumerateTiles(39.0, 32.0, 40.0, 33.0, 10, 8, 100));
+        Assert.Throws<ArgumentOutOfRangeException>(() =>
+            OfflineRegionDownloader.EnumerateTiles(39.0, 32.0, 40.0, 33.0, 5, 10, 0));
+
+        int calls = 0;
+        using var slowHandler = new DelegateHttpMessageHandler(async (_, ct) =>
+        {
+            Interlocked.Increment(ref calls);
+            await Task.Delay(TimeSpan.FromSeconds(30), ct);
+            return new HttpResponseMessage(HttpStatusCode.OK);
+        });
+        using var http = new HttpClient(slowHandler);
+        var downloader = new OfflineRegionDownloader(
+            cache,
+            http,
+            delayMsPerRequest: 0,
+            requestTimeout: TimeSpan.FromMilliseconds(120));
+
+        await Assert.ThrowsAsync<ArgumentOutOfRangeException>(() =>
+            downloader.DownloadBoundsAsync(provider, 39.0, 32.0, 40.0, 33.0, 12, 10, 100, null, CancellationToken.None));
+
+        // 2. Requested zoom outside provider's supported range returns empty result without HTTP calls
+        OfflineDownloadResult outOfProviderRange = await downloader.DownloadBoundsAsync(
+            provider,
+            minLat: 39.9,
+            minLon: 32.8,
+            maxLat: 39.95,
+            maxLon: 32.85,
+            minZoom: 16,
+            maxZoom: 18,
+            maxTilesLimit: 50,
+            progress: null,
+            ct: CancellationToken.None);
+
+        Assert.Equal(0, outOfProviderRange.TotalTiles);
+        Assert.Equal(0, calls);
+
+        // 3. Per-request timeout aborts hung tile request cleanly as a failed tile instead of hanging
+        var sw = Stopwatch.StartNew();
+        OfflineDownloadResult timeoutResult = await downloader.DownloadBoundsAsync(
+            provider,
+            minLat: 39.92,
+            minLon: 32.85,
+            maxLat: 39.93,
+            maxLon: 32.86,
+            minZoom: 10,
+            maxZoom: 10,
+            maxTilesLimit: 10,
+            progress: null,
+            ct: CancellationToken.None);
+        sw.Stop();
+
+        Assert.Equal(1, timeoutResult.TotalTiles);
+        Assert.Equal(1, timeoutResult.FailedTiles);
+        Assert.Equal(0, timeoutResult.DownloadedTiles);
+        Assert.True(sw.Elapsed < TimeSpan.FromSeconds(2), $"Expected quick per-request timeout, elapsed={sw.Elapsed}");
+    }
+
+    [Fact]
+    public async Task MapHttpServer_StaticAssetsIncludeInteractiveRouteAndMeasureTools()
+    {
+        string dbPath = Path.Combine(_tempDir, "interactive-assets.db");
+        using var cache = new TileCacheStore(dbPath);
+        await using var server = new MapHttpServer(cache);
+        await server.StartAsync();
+
+        using var client = new HttpClient { BaseAddress = server.BaseUri };
+        string html = await client.GetStringAsync("/");
+        string mapJs = await client.GetStringAsync("/map.js");
+
+        Assert.Contains("MESAFE ÖLÇ / BİTİR", html, StringComparison.Ordinal);
+        Assert.Contains("ÖLÇÜMÜ TEMİZLE", html, StringComparison.Ordinal);
+        Assert.Contains("tulpar-wp-midpoint", html, StringComparison.Ordinal);
+        Assert.Contains("is-active", html, StringComparison.Ordinal);
+
+        Assert.Contains("missionMovePreview", mapJs, StringComparison.Ordinal);
+        Assert.Contains("missionInsertAfter", mapJs, StringComparison.Ordinal);
+        Assert.Contains("setActiveWaypoint", mapJs, StringComparison.Ordinal);
+        Assert.Contains("tulpar-measure-source", mapJs, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MapHttpServer_StaticAssetsIncludeSelectedWaypointAndLayerToggles()
+    {
+        string dbPath = Path.Combine(_tempDir, "layer-selection-assets.db");
+        using var cache = new TileCacheStore(dbPath);
+        await using var server = new MapHttpServer(cache);
+        await server.StartAsync();
+
+        using var client = new HttpClient { BaseAddress = server.BaseUri };
+        string html = await client.GetStringAsync("/");
+        string mapJs = await client.GetStringAsync("/map.js");
+
+        Assert.Contains(".tulpar-wp-marker.is-selected", html, StringComparison.Ordinal);
+        Assert.Contains("#38BDF8", html, StringComparison.OrdinalIgnoreCase);
+        Assert.Contains("KATMANLAR", html, StringComparison.Ordinal);
+        Assert.Contains("layers-toggle-btn", html, StringComparison.Ordinal);
+        Assert.Contains("layers-panel", html, StringComparison.Ordinal);
+        Assert.Contains("data-layer-group=\"trail\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-layer-group=\"mission\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-layer-group=\"fence\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-layer-group=\"markers\"", html, StringComparison.Ordinal);
+        Assert.Contains("Uçuş İzi (Trail)", html, StringComparison.Ordinal);
+        Assert.Contains("Görev Rotası", html, StringComparison.Ordinal);
+        Assert.Contains("Geofence", html, StringComparison.Ordinal);
+        Assert.Contains("WP İşaretleri", html, StringComparison.Ordinal);
+
+        Assert.Contains("setSelectedWaypoint", mapJs, StringComparison.Ordinal);
+        Assert.Contains("selectedSeq", mapJs, StringComparison.Ordinal);
+        Assert.Contains("is-selected", mapJs, StringComparison.Ordinal);
+        Assert.Contains("setLayoutProperty", mapJs, StringComparison.Ordinal);
+        Assert.Contains("data-layer-group", mapJs, StringComparison.Ordinal);
+        Assert.Contains("tulpar-trail-line", mapJs, StringComparison.Ordinal);
+        Assert.Contains("tulpar-mission-line", mapJs, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task MapHostAssets_IncludeRallyPointControlsAndMarkers()
+    {
+        string dbPath = Path.Combine(_tempDir, "rally-map.db");
+        using var cache = new TileCacheStore(dbPath);
+        await using var server = new MapHttpServer(cache);
+        await server.StartAsync();
+
+        using var client = new HttpClient { BaseAddress = server.BaseUri };
+        string html = await client.GetStringAsync("/");
+        string mapJs = await client.GetStringAsync("/map.js");
+
+        Assert.Contains(".tulpar-rally-marker", html, StringComparison.Ordinal);
+        Assert.Contains("data-action=\"rally-add\"", html, StringComparison.Ordinal);
+        Assert.Contains("data-layer-group=\"rally\"", html, StringComparison.Ordinal);
+        Assert.Contains("setRally", mapJs, StringComparison.Ordinal);
+        Assert.Contains("rallyAdd", mapJs, StringComparison.Ordinal);
+        Assert.Contains("rallyMove", mapJs, StringComparison.Ordinal);
+        Assert.Contains("setFollowVehicle", mapJs, StringComparison.Ordinal);
+        Assert.Contains("followVehicle", mapJs, StringComparison.Ordinal);
     }
 
     private static void CreateSampleMbtiles(

@@ -20,6 +20,7 @@ public partial class OfflineMapDialog : Window
     private readonly Action? _onRequestBoundsPickFromMap;
     private CancellationTokenSource? _downloadCts;
     private bool _isReady;
+    private bool _isClosed;
 
     public OfflineMapDialog(
         MapHttpServer mapServer,
@@ -34,6 +35,7 @@ public partial class OfflineMapDialog : Window
         _onRequestBoundsPickFromMap = onRequestBoundsPickFromMap;
 
         InitializeComponent();
+        WindowChromeHelper.EnableDarkTitleBar(this);
 
         if (initialBounds is { } bounds)
         {
@@ -46,7 +48,7 @@ public partial class OfflineMapDialog : Window
         ReloadProviders();
         _isReady = true;
         UpdateTileEstimate();
-        Closed += (_, _) => _downloadCts?.Cancel();
+        Closed += OnDialogClosed;
     }
 
     public bool RequestedBoundsPick { get; private set; }
@@ -124,6 +126,11 @@ public partial class OfflineMapDialog : Window
 
     private async void OnStartDownloadClick(object sender, RoutedEventArgs e)
     {
+        if (_isClosed)
+        {
+            return;
+        }
+
         if (!TryReadDownloadInputs(
                 out TileProviderConfig? provider,
                 out double minLat,
@@ -139,9 +146,9 @@ public partial class OfflineMapDialog : Window
             return;
         }
 
-        _downloadCts?.Cancel();
-        _downloadCts?.Dispose();
-        _downloadCts = new CancellationTokenSource();
+        CancelAndDisposeDownloadCts();
+        var cts = new CancellationTokenSource();
+        _downloadCts = cts;
 
         StartDownloadBtn.IsEnabled = false;
         CancelDownloadBtn.IsEnabled = true;
@@ -150,6 +157,11 @@ public partial class OfflineMapDialog : Window
 
         var progress = new Progress<OfflineDownloadProgress>(p =>
         {
+            if (_isClosed)
+            {
+                return;
+            }
+
             int pct = p.TotalTiles > 0
                 ? Math.Clamp((int)Math.Round((p.CompletedTiles + p.FailedTiles) * 100.0 / p.TotalTiles), 0, 100)
                 : 0;
@@ -169,7 +181,12 @@ public partial class OfflineMapDialog : Window
                 maxZoom,
                 maxTiles,
                 progress,
-                _downloadCts.Token);
+                cts.Token);
+
+            if (_isClosed)
+            {
+                return;
+            }
 
             DownloadProgressBar.Value = 100;
             string capNote = result.Capped ? " [KIRPILDI]" : string.Empty;
@@ -178,22 +195,70 @@ public partial class OfflineMapDialog : Window
         }
         catch (OperationCanceledException)
         {
-            DownloadStatusText.Text = "İNDİRME İPTAL EDİLDİ.";
+            if (!_isClosed)
+            {
+                DownloadStatusText.Text = "İNDİRME İPTAL EDİLDİ.";
+            }
         }
         catch (Exception ex)
         {
-            DownloadStatusText.Text = $"İNDİRME HATASI: {ex.Message}";
+            if (!_isClosed)
+            {
+                DownloadStatusText.Text = $"İNDİRME HATASI: {ex.Message}";
+            }
         }
         finally
         {
-            StartDownloadBtn.IsEnabled = true;
-            CancelDownloadBtn.IsEnabled = false;
+            if (ReferenceEquals(_downloadCts, cts))
+            {
+                _downloadCts = null;
+            }
+            cts.Dispose();
+
+            if (!_isClosed)
+            {
+                StartDownloadBtn.IsEnabled = true;
+                CancelDownloadBtn.IsEnabled = false;
+            }
         }
     }
 
     private void OnCancelDownloadClick(object sender, RoutedEventArgs e)
     {
-        _downloadCts?.Cancel();
+        try
+        {
+            _downloadCts?.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+    }
+
+    private void OnDialogClosed(object? sender, EventArgs e)
+    {
+        _isClosed = true;
+        CancelAndDisposeDownloadCts();
+    }
+
+    private void CancelAndDisposeDownloadCts()
+    {
+        CancellationTokenSource? cts = Interlocked.Exchange(ref _downloadCts, null);
+        if (cts is null)
+        {
+            return;
+        }
+
+        try
+        {
+            cts.Cancel();
+        }
+        catch (ObjectDisposedException)
+        {
+        }
+        finally
+        {
+            cts.Dispose();
+        }
     }
 
     private void OnPickBoundsFromMapClick(object sender, RoutedEventArgs e)

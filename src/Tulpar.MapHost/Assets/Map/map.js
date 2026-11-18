@@ -4,32 +4,53 @@
   const DEFAULT_CENTER = [32.8597, 39.9334];
   const DEFAULT_ZOOM = 6;
   const MAX_TRAIL_POINTS = 500;
+  const DRAG_PREVIEW_THROTTLE_MS = 70;
 
-  let activeLayerId = 'satellite';
+  let activeLayerId = 'google-satellite-hd';
   let editMode = 'none';
+  let prevEditModeBeforeMeasure = 'none';
   let mapLoaded = false;
   let hasCenteredOnVehicle = false;
+  let followVehicle = false;
   let lastVehicleState = null;
   let internalTrail = [];
   let pendingMission = [];
   let pendingFence = [];
+  let pendingRally = [];
   let layersCatalog = {};
   let contextLngLat = null;
   let boundsDragStart = null;
+  let activeWaypointSeq = null;
+  let selectedSeq = null;
+  let measurePoints = [];
+  const layerVisibility = {
+    trail: true,
+    mission: true,
+    fence: true,
+    markers: true,
+    rally: true
+  };
 
   let vehicleMarker = null;
   let vehicleSvgEl = null;
   let vehicleCategoryRendered = null;
   let homeMarker = null;
   let missionMarkers = [];
+  let missionMarkerEntries = [];
+  let missionMidpointMarkers = [];
   let fenceMarkers = [];
+  let rallyMarkers = [];
 
   const mapEl = document.getElementById('map');
   const hudModeEl = document.getElementById('hud-mode');
   const hudCoordsEl = document.getElementById('hud-coords');
+  const hudMeasureEl = document.getElementById('hud-measure');
   const boundsBoxEl = document.getElementById('bounds-box');
   const ctxAnchorEl = document.getElementById('ctx-anchor');
   const contextMenuEl = document.getElementById('context-menu');
+  const layersControlEl = document.getElementById('layers-control');
+  const layersToggleBtnEl = document.getElementById('layers-toggle-btn');
+  const layersPanelEl = document.getElementById('layers-panel');
 
   function postToHost(payload) {
     try {
@@ -156,6 +177,7 @@
     container: 'map',
     center: DEFAULT_CENTER,
     zoom: DEFAULT_ZOOM,
+    maxZoom: 22,
     attributionControl: true,
     dragRotate: false,
     pitchWithRotate: false,
@@ -167,7 +189,7 @@
           tiles: [buildTileUrl(activeLayerId)],
           tileSize: 256,
           minzoom: 0,
-          maxzoom: 19
+          maxzoom: 21
         }
       },
       layers: [
@@ -228,15 +250,38 @@
       }
     });
 
+    map.addSource('tulpar-mission-loop-source', { type: 'geojson', data: createEmptyFeatureCollection() });
+    map.addLayer({
+      id: 'tulpar-mission-loop-line',
+      type: 'line',
+      source: 'tulpar-mission-loop-source',
+      paint: {
+        'line-color': '#38bdf8',
+        'line-width': 2,
+        'line-dasharray': [4, 3]
+      }
+    });
+
     map.addSource('tulpar-trail-source', { type: 'geojson', data: createEmptyFeatureCollection() });
+    map.addLayer({
+      id: 'tulpar-trail-glow',
+      type: 'line',
+      source: 'tulpar-trail-source',
+      paint: {
+        'line-color': '#38bdf8',
+        'line-width': 6,
+        'line-opacity': 0.22
+      }
+    });
     map.addLayer({
       id: 'tulpar-trail-line',
       type: 'line',
       source: 'tulpar-trail-source',
       paint: {
-        'line-color': '#ffffff',
-        'line-width': 2,
-        'line-opacity': 0.85
+        'line-color': '#38bdf8',
+        'line-width': 2.2,
+        'line-opacity': 0.95,
+        'line-dasharray': [2, 1.5]
       }
     });
 
@@ -252,8 +297,34 @@
       }
     });
 
+    map.addSource('tulpar-measure-source', { type: 'geojson', data: createEmptyFeatureCollection() });
+    map.addLayer({
+      id: 'tulpar-measure-line',
+      type: 'line',
+      source: 'tulpar-measure-source',
+      filter: ['==', ['geometry-type'], 'LineString'],
+      paint: {
+        'line-color': '#ffcc00',
+        'line-width': 2.5,
+        'line-dasharray': [3, 2]
+      }
+    });
+    map.addLayer({
+      id: 'tulpar-measure-points',
+      type: 'circle',
+      source: 'tulpar-measure-source',
+      filter: ['==', ['geometry-type'], 'Point'],
+      paint: {
+        'circle-radius': 4.5,
+        'circle-color': '#ffcc00',
+        'circle-stroke-width': 1.5,
+        'circle-stroke-color': '#000000'
+      }
+    });
+
     applyLayer(activeLayerId);
     refreshLayers();
+    applyAllLayerVisibilities();
 
     if (lastVehicleState) {
       updateVehicle(lastVehicleState);
@@ -263,6 +334,12 @@
     }
     if (pendingFence.length > 0) {
       setFence(pendingFence);
+    }
+    if (pendingRally.length > 0) {
+      setRally(pendingRally);
+    }
+    if (measurePoints.length > 0) {
+      updateMeasureDisplay();
     }
   });
 
@@ -282,6 +359,10 @@
       postToHost({ type: 'missionAdd', lat: e.lngLat.lat, lon: e.lngLat.lng });
     } else if (editMode === 'fence') {
       postToHost({ type: 'fenceAdd', lat: e.lngLat.lat, lon: e.lngLat.lng });
+    } else if (editMode === 'rally') {
+      postToHost({ type: 'rallyAdd', lat: e.lngLat.lat, lon: e.lngLat.lng });
+    } else if (editMode === 'measure') {
+      addMeasurePoint(e.lngLat.lng, e.lngLat.lat);
     }
   });
 
@@ -432,6 +513,16 @@
         return;
       }
 
+      if (action === 'measure-toggle') {
+        toggleMeasureMode();
+        return;
+      }
+
+      if (action === 'measure-clear') {
+        clearMeasure();
+        return;
+      }
+
       if (!contextLngLat) {
         return;
       }
@@ -442,6 +533,8 @@
         postToHost({ type: 'missionAdd', lat: contextLngLat.lat, lon: contextLngLat.lng });
       } else if (action === 'fence-add') {
         postToHost({ type: 'fenceAdd', lat: contextLngLat.lat, lon: contextLngLat.lng });
+      } else if (action === 'rally-add') {
+        postToHost({ type: 'rallyAdd', lat: contextLngLat.lat, lon: contextLngLat.lng });
       }
     });
   }
@@ -474,14 +567,15 @@
   }
 
   function applyLayer(layerId) {
-    activeLayerId = layerId || 'satellite';
+    activeLayerId = layerId || 'google-satellite-hd';
     if (!mapLoaded) {
       return;
     }
 
     const layerInfo = layersCatalog[activeLayerId];
     const minZoom = Number.isFinite(Number(layerInfo?.minZoom)) ? Number(layerInfo.minZoom) : 0;
-    const maxZoom = Number.isFinite(Number(layerInfo?.maxZoom)) ? Number(layerInfo.maxZoom) : 19;
+    const defaultMaxZoom = activeLayerId.includes('-hd') ? 21 : 19;
+    const maxZoom = Number.isFinite(Number(layerInfo?.maxZoom)) ? Number(layerInfo.maxZoom) : defaultMaxZoom;
     const tileUrl = buildTileUrl(activeLayerId);
 
     const src = map.getSource('basemap-tiles');
@@ -536,6 +630,9 @@
         }
       }
       layersCatalog = catalog;
+      if (mapLoaded) {
+        applyLayer(activeLayerId);
+      }
     } catch (_) {
       // Offline / transient fetch failure; local tile endpoint remains usable.
     }
@@ -583,6 +680,8 @@
       if (!hasCenteredOnVehicle) {
         hasCenteredOnVehicle = true;
         map.jumpTo({ center: [lon, lat], zoom: Math.max(map.getZoom(), 15) });
+      } else if (followVehicle) {
+        map.easeTo({ center: [lon, lat], duration: 180 });
       }
 
       // Heading vector (~220m projection ahead of vehicle)
@@ -643,6 +742,108 @@
       homeMarker.remove();
       homeMarker = null;
     }
+
+    if ('activeWaypointSeq' in state) {
+      setActiveWaypoint(state.activeWaypointSeq);
+    }
+  }
+
+  function setActiveWaypoint(seq) {
+    const parsed = (seq === null || seq === undefined || seq === '') ? null : Number(seq);
+    activeWaypointSeq = (Number.isFinite(parsed) && parsed >= 0) ? Math.round(parsed) : null;
+    for (const entry of missionMarkerEntries) {
+      entry.el.classList.toggle('is-active', activeWaypointSeq !== null && entry.seq === activeWaypointSeq);
+    }
+  }
+
+  function setSelectedWaypoint(seq) {
+    const parsed = (seq === null || seq === undefined || seq === '') ? null : Number(seq);
+    selectedSeq = (Number.isFinite(parsed) && parsed >= 0) ? Math.round(parsed) : null;
+    for (const entry of missionMarkerEntries) {
+      entry.el.classList.toggle('is-selected', selectedSeq !== null && entry.seq === selectedSeq);
+    }
+  }
+
+  function setMapLayerVisibility(layerId, visible) {
+    if (!mapLoaded || !map.getLayer(layerId)) {
+      return;
+    }
+    map.setLayoutProperty(layerId, 'visibility', visible ? 'visible' : 'none');
+  }
+
+  function applyLayerGroupVisibility(group) {
+    const visible = layerVisibility[group] !== false;
+    if (group === 'trail') {
+      setMapLayerVisibility('tulpar-trail-glow', visible);
+      setMapLayerVisibility('tulpar-trail-line', visible);
+    } else if (group === 'mission') {
+      setMapLayerVisibility('tulpar-mission-line', visible);
+      setMapLayerVisibility('tulpar-mission-loop-line', visible);
+    } else if (group === 'fence') {
+      setMapLayerVisibility('tulpar-fence-fill', visible);
+      setMapLayerVisibility('tulpar-fence-outline', visible);
+      for (const marker of fenceMarkers) {
+        marker.getElement().style.display = visible ? '' : 'none';
+      }
+    } else if (group === 'markers') {
+      for (const marker of missionMarkers) {
+        marker.getElement().style.display = visible ? '' : 'none';
+      }
+      for (const midMarker of missionMidpointMarkers) {
+        midMarker.getElement().style.display = visible ? '' : 'none';
+      }
+    } else if (group === 'rally') {
+      for (const marker of rallyMarkers) {
+        marker.getElement().style.display = visible ? '' : 'none';
+      }
+    }
+  }
+
+  function applyAllLayerVisibilities() {
+    applyLayerGroupVisibility('trail');
+    applyLayerGroupVisibility('mission');
+    applyLayerGroupVisibility('fence');
+    applyLayerGroupVisibility('markers');
+    applyLayerGroupVisibility('rally');
+  }
+
+  if (layersToggleBtnEl && layersPanelEl) {
+    layersToggleBtnEl.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+      const willOpen = layersPanelEl.hidden;
+      layersPanelEl.hidden = !willOpen;
+      layersToggleBtnEl.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+    });
+
+    layersPanelEl.addEventListener('click', (ev) => {
+      ev.stopPropagation();
+    });
+
+    layersPanelEl.addEventListener('change', (ev) => {
+      const checkbox = ev.target.closest('input[type="checkbox"][data-layer-group]');
+      if (!checkbox) {
+        return;
+      }
+      const group = checkbox.dataset.layerGroup;
+      if (group in layerVisibility) {
+        layerVisibility[group] = checkbox.checked;
+        applyLayerGroupVisibility(group);
+      }
+    });
+
+    document.addEventListener('click', (ev) => {
+      if (!layersPanelEl.hidden && layersControlEl && !layersControlEl.contains(ev.target)) {
+        layersPanelEl.hidden = true;
+        layersToggleBtnEl.setAttribute('aria-expanded', 'false');
+      }
+    });
+
+    document.addEventListener('keydown', (ev) => {
+      if (ev.key === 'Escape' && !layersPanelEl.hidden) {
+        layersPanelEl.hidden = true;
+        layersToggleBtnEl.setAttribute('aria-expanded', 'false');
+      }
+    });
   }
 
   function setMission(items) {
@@ -654,12 +855,65 @@
     for (const marker of missionMarkers) {
       marker.remove();
     }
+    for (const midMarker of missionMidpointMarkers) {
+      midMarker.remove();
+    }
     missionMarkers = [];
+    missionMarkerEntries = [];
+    missionMidpointMarkers = [];
 
-    const lineCoords = [];
+    const spatialWaypoints = [];
+    const coordBySeq = {};
+    const jumpEdges = [];
+    const midpointEntries = [];
+
+    function updateMissionGeometry() {
+      const lineCoords = spatialWaypoints.map((wp) => wp.coord);
+      const missionSrc = map.getSource('tulpar-mission-source');
+      if (missionSrc) {
+        missionSrc.setData(lineCoords.length >= 2
+          ? { type: 'Feature', geometry: { type: 'LineString', coordinates: lineCoords } }
+          : createEmptyFeatureCollection());
+      }
+
+      const loopFeatures = [];
+      for (const edge of jumpEdges) {
+        const fromWp = spatialWaypoints[edge.fromIndex];
+        const targetCoord = coordBySeq[edge.targetSeq];
+        if (fromWp && targetCoord) {
+          loopFeatures.push({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: [fromWp.coord, targetCoord] }
+          });
+        }
+      }
+
+      const loopSrc = map.getSource('tulpar-mission-loop-source');
+      if (loopSrc) {
+        loopSrc.setData({ type: 'FeatureCollection', features: loopFeatures });
+      }
+
+      for (const mid of midpointEntries) {
+        mid.marker.setLngLat([
+          (mid.leftWp.coord[0] + mid.rightWp.coord[0]) / 2,
+          (mid.leftWp.coord[1] + mid.rightWp.coord[1]) / 2
+        ]);
+      }
+    }
+
     for (let i = 0; i < pendingMission.length; i++) {
       const item = pendingMission[i];
       if (!item || typeof item !== 'object') {
+        continue;
+      }
+
+      const seq = Number.isFinite(Number(item.seq)) ? Number(item.seq) : i;
+      const cmdId = Number(item.command);
+      if (cmdId === 177 && spatialWaypoints.length > 0) { // MAV_CMD_DO_JUMP
+        jumpEdges.push({
+          fromIndex: spatialWaypoints.length - 1,
+          targetSeq: Math.round(Number(item.param1))
+        });
         continue;
       }
 
@@ -669,34 +923,109 @@
         continue;
       }
 
-      const seq = Number.isFinite(Number(item.seq)) ? Number(item.seq) : i;
-      lineCoords.push([lon, lat]);
+      const coord = [lon, lat];
+      coordBySeq[seq] = coord;
+      const altVal = Number(item.alt ?? item.altitude);
+      const altLabel = Number.isFinite(altVal) ? ` · ${Math.round(altVal)}m` : '';
 
       const el = document.createElement('div');
       el.className = 'tulpar-wp-marker';
+      if (activeWaypointSeq !== null && seq === activeWaypointSeq) {
+        el.classList.add('is-active');
+      }
+      if (selectedSeq !== null && seq === selectedSeq) {
+        el.classList.add('is-selected');
+      }
+      if (!layerVisibility.markers) {
+        el.style.display = 'none';
+      }
       el.textContent = String(seq);
-      el.title = `WP ${seq}`;
-      el.addEventListener('click', (ev) => ev.stopPropagation());
-      el.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+      el.title = `WP #${seq}${altLabel} — Ayarlar için tıkla`;
+
+      let downX = 0;
+      let downY = 0;
+      el.addEventListener('pointerdown', (ev) => {
+        downX = ev.clientX;
+        downY = ev.clientY;
+        ev.stopPropagation();
+      });
+      el.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const dist = Math.hypot(ev.clientX - downX, ev.clientY - downY);
+        if (dist < 6) {
+          setSelectedWaypoint(seq);
+          postToHost({ type: 'missionSelect', seq });
+        }
+      });
 
       const marker = new maplibregl.Marker({ element: el, draggable: true, anchor: 'center' })
-        .setLngLat([lon, lat])
+        .setLngLat(coord)
         .addTo(map);
+
+      const wpEntry = { seq, coord, marker, el };
+      spatialWaypoints.push(wpEntry);
+
+      let lastDragPreviewAt = 0;
+      marker.on('drag', () => {
+        const pos = marker.getLngLat();
+        wpEntry.coord = [pos.lng, pos.lat];
+        coordBySeq[seq] = wpEntry.coord;
+        updateMissionGeometry();
+
+        const now = performance.now();
+        if (now - lastDragPreviewAt >= DRAG_PREVIEW_THROTTLE_MS) {
+          lastDragPreviewAt = now;
+          postToHost({ type: 'missionMovePreview', seq, lat: pos.lat, lon: pos.lng });
+        }
+      });
 
       marker.on('dragend', () => {
         const pos = marker.getLngLat();
+        wpEntry.coord = [pos.lng, pos.lat];
+        coordBySeq[seq] = wpEntry.coord;
+        updateMissionGeometry();
         postToHost({ type: 'missionMove', seq, lat: pos.lat, lon: pos.lng });
       });
 
       missionMarkers.push(marker);
+      missionMarkerEntries.push(wpEntry);
     }
 
-    const missionSrc = map.getSource('tulpar-mission-source');
-    if (missionSrc) {
-      missionSrc.setData(lineCoords.length >= 2
-        ? { type: 'Feature', geometry: { type: 'LineString', coordinates: lineCoords } }
-        : createEmptyFeatureCollection());
+    for (let k = 0; k < spatialWaypoints.length - 1; k++) {
+      const leftWp = spatialWaypoints[k];
+      const rightWp = spatialWaypoints[k + 1];
+      const midLon = (leftWp.coord[0] + rightWp.coord[0]) / 2;
+      const midLat = (leftWp.coord[1] + rightWp.coord[1]) / 2;
+
+      const midEl = document.createElement('div');
+      midEl.className = 'tulpar-wp-midpoint';
+      if (!layerVisibility.markers) {
+        midEl.style.display = 'none';
+      }
+      midEl.textContent = '+';
+      midEl.title = `WP #${leftWp.seq} sonrasına nokta ekle`;
+      midEl.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+
+      const midMarker = new maplibregl.Marker({ element: midEl, anchor: 'center' })
+        .setLngLat([midLon, midLat])
+        .addTo(map);
+
+      midEl.addEventListener('click', (ev) => {
+        ev.stopPropagation();
+        const pos = midMarker.getLngLat();
+        postToHost({
+          type: 'missionInsertAfter',
+          afterSeq: leftWp.seq,
+          lat: pos.lat,
+          lon: pos.lng
+        });
+      });
+
+      missionMidpointMarkers.push(midMarker);
+      midpointEntries.push({ leftWp, rightWp, marker: midMarker });
     }
+
+    updateMissionGeometry();
   }
 
   function setFence(points) {
@@ -716,6 +1045,9 @@
       const idx = i;
       const el = document.createElement('div');
       el.className = 'tulpar-fence-marker';
+      if (!layerVisibility.fence) {
+        el.style.display = 'none';
+      }
       el.title = `GF ${idx}`;
       el.addEventListener('click', (ev) => ev.stopPropagation());
       el.addEventListener('pointerdown', (ev) => ev.stopPropagation());
@@ -751,9 +1083,144 @@
     }
   }
 
+  function setRally(points) {
+    pendingRally = Array.isArray(points) ? points : [];
+    if (!mapLoaded) {
+      return;
+    }
+
+    for (const marker of rallyMarkers) {
+      marker.remove();
+    }
+    rallyMarkers = [];
+
+    for (let i = 0; i < pendingRally.length; i++) {
+      const pt = pendingRally[i];
+      if (!pt || typeof pt !== 'object') {
+        continue;
+      }
+      const lat = Number(pt.lat ?? pt.latitude);
+      const lon = Number(pt.lon ?? pt.lng ?? pt.longitude);
+      if (!isValidLatLon(lat, lon)) {
+        continue;
+      }
+
+      const idx = i;
+      const altVal = Number(pt.alt ?? pt.altitude);
+      const el = document.createElement('div');
+      el.className = 'tulpar-rally-marker';
+      if (!layerVisibility.rally) {
+        el.style.display = 'none';
+      }
+      el.textContent = `R${idx}`;
+      el.title = `Rally #${idx}${Number.isFinite(altVal) ? ` · ${Math.round(altVal)}m` : ''}`;
+      el.addEventListener('click', (ev) => ev.stopPropagation());
+      el.addEventListener('pointerdown', (ev) => ev.stopPropagation());
+
+      const marker = new maplibregl.Marker({ element: el, draggable: true, anchor: 'center' })
+        .setLngLat([lon, lat])
+        .addTo(map);
+
+      marker.on('dragend', () => {
+        const pos = marker.getLngLat();
+        postToHost({ type: 'rallyMove', index: idx, lat: pos.lat, lon: pos.lng });
+      });
+
+      rallyMarkers.push(marker);
+    }
+  }
+
+  function haversineMeters(lon1, lat1, lon2, lat2) {
+    const R = 6371000;
+    const toRad = Math.PI / 180;
+    const dLat = (lat2 - lat1) * toRad;
+    const dLon = (lon2 - lon1) * toRad;
+    const a = Math.sin(dLat / 2) * Math.sin(dLat / 2) +
+      Math.cos(lat1 * toRad) * Math.cos(lat2 * toRad) *
+      Math.sin(dLon / 2) * Math.sin(dLon / 2);
+    return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+  }
+
+  function formatDistance(meters) {
+    if (meters >= 1000) {
+      return `${(meters / 1000).toFixed(2)} km`;
+    }
+    return `${Math.round(meters)} m`;
+  }
+
+  function updateMeasureDisplay() {
+    if (mapLoaded) {
+      const measureSrc = map.getSource('tulpar-measure-source');
+      if (measureSrc) {
+        const features = measurePoints.map((coord) => ({
+          type: 'Feature',
+          geometry: { type: 'Point', coordinates: coord }
+        }));
+        if (measurePoints.length >= 2) {
+          features.push({
+            type: 'Feature',
+            geometry: { type: 'LineString', coordinates: measurePoints }
+          });
+        }
+        measureSrc.setData({ type: 'FeatureCollection', features });
+      }
+    }
+
+    if (!hudMeasureEl) {
+      return;
+    }
+
+    if (measurePoints.length === 0 && editMode !== 'measure') {
+      hudMeasureEl.hidden = true;
+      return;
+    }
+
+    hudMeasureEl.hidden = false;
+    if (measurePoints.length === 0) {
+      hudMeasureEl.textContent = 'ÖLÇÜM: NOKTA SEÇİN';
+      return;
+    }
+
+    if (measurePoints.length === 1) {
+      hudMeasureEl.textContent = 'ÖLÇÜM: 0 m (1 NOKTA)';
+      return;
+    }
+
+    let totalMeters = 0;
+    for (let i = 1; i < measurePoints.length; i++) {
+      const [lon1, lat1] = measurePoints[i - 1];
+      const [lon2, lat2] = measurePoints[i];
+      totalMeters += haversineMeters(lon1, lat1, lon2, lat2);
+    }
+    hudMeasureEl.textContent = `ÖLÇÜM: ${formatDistance(totalMeters)}`;
+  }
+
+  function addMeasurePoint(lon, lat) {
+    if (!isValidLatLon(lat, lon)) {
+      return;
+    }
+    measurePoints.push([lon, lat]);
+    updateMeasureDisplay();
+  }
+
+  function clearMeasure() {
+    measurePoints = [];
+    updateMeasureDisplay();
+  }
+
+  function toggleMeasureMode() {
+    if (editMode === 'measure') {
+      const restoreMode = prevEditModeBeforeMeasure === 'measure' ? 'none' : prevEditModeBeforeMeasure;
+      setEditMode(restoreMode);
+    } else {
+      prevEditModeBeforeMeasure = editMode;
+      setEditMode('measure');
+    }
+  }
+
   function setEditMode(mode) {
     const normalized = String(mode || 'none').toLowerCase();
-    editMode = ['none', 'mission', 'fence', 'bounds'].includes(normalized) ? normalized : 'none';
+    editMode = ['none', 'mission', 'fence', 'rally', 'bounds', 'measure'].includes(normalized) ? normalized : 'none';
 
     mapEl.classList.toggle('mode-crosshair', editMode !== 'none');
     hudModeEl.dataset.editing = editMode !== 'none' ? 'true' : 'false';
@@ -762,11 +1229,17 @@
       hudModeEl.textContent = 'GÖREV EKLEME';
     } else if (editMode === 'fence') {
       hudModeEl.textContent = 'GEOFENCE ÇİZİM';
+    } else if (editMode === 'rally') {
+      hudModeEl.textContent = 'RALLY NOKTASI EKLE';
     } else if (editMode === 'bounds') {
       hudModeEl.textContent = 'BÖLGE SEÇİMİ';
+    } else if (editMode === 'measure') {
+      hudModeEl.textContent = 'MESAFE ÖLÇÜMÜ';
     } else {
       hudModeEl.textContent = 'İZLEME';
     }
+
+    updateMeasureDisplay();
   }
 
   function centerOnVehicle() {
@@ -775,6 +1248,13 @@
         center: [Number(lastVehicleState.lon), Number(lastVehicleState.lat)],
         duration: 350
       });
+    }
+  }
+
+  function setFollowVehicle(enabled) {
+    followVehicle = Boolean(enabled);
+    if (followVehicle) {
+      centerOnVehicle();
     }
   }
 
@@ -795,14 +1275,29 @@
         case 'setMission':
           setMission(msg.items ?? msg.payload);
           break;
+        case 'setActiveWaypoint':
+          setActiveWaypoint(msg.payload?.seq ?? msg.seq ?? msg.payload);
+          break;
+        case 'setSelectedWaypoint':
+          setSelectedWaypoint(msg.payload?.seq ?? msg.seq ?? msg.payload);
+          break;
         case 'setFence':
           setFence(msg.points ?? msg.payload);
+          break;
+        case 'setRally':
+          setRally(msg.points ?? msg.payload);
           break;
         case 'setEditMode':
           setEditMode(msg.mode ?? msg.payload);
           break;
+        case 'clearMeasure':
+          clearMeasure();
+          break;
         case 'centerOnVehicle':
           centerOnVehicle();
+          break;
+        case 'setFollowVehicle':
+          setFollowVehicle(msg.enabled ?? msg.payload);
           break;
         case 'refreshLayers':
           refreshLayers();
@@ -815,9 +1310,14 @@
     setLayer,
     updateVehicle,
     setMission,
+    setActiveWaypoint,
+    setSelectedWaypoint,
     setFence,
+    setRally,
     setEditMode,
+    clearMeasure,
     centerOnVehicle,
+    setFollowVehicle,
     refreshLayers,
     getCatalog: () => layersCatalog
   };

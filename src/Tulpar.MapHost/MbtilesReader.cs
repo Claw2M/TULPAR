@@ -7,6 +7,9 @@ namespace Tulpar.MapHost;
 /// </summary>
 public sealed class MbtilesReader : IDisposable
 {
+    private static readonly string[] RequiredTilesColumns =
+        ["zoom_level", "tile_column", "tile_row", "tile_data"];
+
     private readonly Lock _sync = new();
     private readonly SqliteConnection _connection;
     private int _disposed;
@@ -37,6 +40,8 @@ public sealed class MbtilesReader : IDisposable
             {
                 throw new InvalidDataException($"Invalid MBTiles archive '{fullPath}': missing 'tiles' table or view.");
             }
+
+            VerifyTilesSchema(_connection, fullPath);
 
             string? metadataName = null;
             string? metadataFormat = null;
@@ -106,19 +111,26 @@ public sealed class MbtilesReader : IDisposable
         {
             ObjectDisposedException.ThrowIf(_disposed != 0, this);
 
-            using SqliteCommand cmd = _connection.CreateCommand();
-            cmd.CommandText = """
-                SELECT tile_data
-                FROM tiles
-                WHERE zoom_level = $z AND tile_column = $x AND tile_row = $y
-                LIMIT 1;
-                """;
-            cmd.Parameters.AddWithValue("$z", z);
-            cmd.Parameters.AddWithValue("$x", x);
-            cmd.Parameters.AddWithValue("$y", tmsY);
+            try
+            {
+                using SqliteCommand cmd = _connection.CreateCommand();
+                cmd.CommandText = """
+                    SELECT tile_data
+                    FROM tiles
+                    WHERE zoom_level = $z AND tile_column = $x AND tile_row = $y
+                    LIMIT 1;
+                    """;
+                cmd.Parameters.AddWithValue("$z", z);
+                cmd.Parameters.AddWithValue("$x", x);
+                cmd.Parameters.AddWithValue("$y", tmsY);
 
-            object? result = cmd.ExecuteScalar();
-            return result is byte[] bytes && bytes.Length > 0 ? bytes : null;
+                object? result = cmd.ExecuteScalar();
+                return result is byte[] bytes && bytes.Length > 0 ? bytes : null;
+            }
+            catch (SqliteException)
+            {
+                return null;
+            }
         }
     }
 
@@ -133,6 +145,39 @@ public sealed class MbtilesReader : IDisposable
 
             _disposed = 1;
             _connection.Dispose();
+        }
+    }
+
+    private static void VerifyTilesSchema(SqliteConnection conn, string fullPath)
+    {
+        var columns = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        using (SqliteCommand cmd = conn.CreateCommand())
+        {
+            cmd.CommandText = "PRAGMA table_info('tiles');";
+            using SqliteDataReader reader = cmd.ExecuteReader();
+            int nameOrdinal = reader.GetOrdinal("name");
+            while (reader.Read())
+            {
+                if (!reader.IsDBNull(nameOrdinal))
+                {
+                    columns.Add(reader.GetString(nameOrdinal));
+                }
+            }
+        }
+
+        List<string>? missing = null;
+        foreach (string required in RequiredTilesColumns)
+        {
+            if (!columns.Contains(required))
+            {
+                (missing ??= []).Add(required);
+            }
+        }
+
+        if (missing is { Count: > 0 })
+        {
+            throw new InvalidDataException(
+                $"Invalid MBTiles archive '{fullPath}': 'tiles' table missing required column(s): {string.Join(", ", missing)}.");
         }
     }
 

@@ -16,11 +16,43 @@ public sealed record TileProviderConfig(
 /// </summary>
 public static class BuiltInTileProviders
 {
+    public static TileProviderConfig GoogleSatelliteHd { get; } = new(
+        Id: "google-satellite-hd",
+        Name: "UYDU HD (GOOGLE 2X)",
+        UrlTemplate: "https://mt1.google.com/vt/lyrs=s&scale=2&x={x}&y={y}&z={z}",
+        MaxZoom: 21,
+        MinZoom: 0,
+        IsBuiltIn: true);
+
+    public static TileProviderConfig GoogleHybridHd { get; } = new(
+        Id: "google-hybrid-hd",
+        Name: "HİBRİT HD (GOOGLE 2X)",
+        UrlTemplate: "https://mt1.google.com/vt/lyrs=y&scale=2&x={x}&y={y}&z={z}",
+        MaxZoom: 21,
+        MinZoom: 0,
+        IsBuiltIn: true);
+
+    public static TileProviderConfig EsriClarity { get; } = new(
+        Id: "esri-clarity",
+        Name: "UYDU NETLİK (ESRI CLARITY)",
+        UrlTemplate: "https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
+        MaxZoom: 19,
+        MinZoom: 0,
+        IsBuiltIn: true);
+
     public static TileProviderConfig Satellite { get; } = new(
         Id: "satellite",
         Name: "UYDU (ESRI)",
         UrlTemplate: "https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}",
         MaxZoom: 19,
+        MinZoom: 0,
+        IsBuiltIn: true);
+
+    public static TileProviderConfig GoogleStreetHd { get; } = new(
+        Id: "google-street-hd",
+        Name: "HARİTA HD (GOOGLE 2X)",
+        UrlTemplate: "https://mt1.google.com/vt/lyrs=m&scale=2&x={x}&y={y}&z={z}",
+        MaxZoom: 21,
         MinZoom: 0,
         IsBuiltIn: true);
 
@@ -42,7 +74,11 @@ public static class BuiltInTileProviders
 
     public static IReadOnlyList<TileProviderConfig> All { get; } =
     [
+        GoogleSatelliteHd,
+        GoogleHybridHd,
+        EsriClarity,
         Satellite,
+        GoogleStreetHd,
         Street,
         Topo
     ];

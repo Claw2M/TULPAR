@@ -188,9 +188,15 @@ public enum MavCmd : ushort
     DoSetCamTriggDist = 206,
     DoFenceEnable = 207,
     DoParachute = 208,
+    DoMotorTest = 209,
     DoInvertedFlight = 210,
     DoGripper = 211,
     DoAutotuneEnable = 212,
+    PreflightCalibration = 241,
+    PreflightSetSensorOffsets = 242,
+    PreflightStorage = 245,
+    PreflightRebootShutdown = 246,
+    MissionStart = 300,
     ComponentArmDisarm = 400,
     GetHomePosition = 410,
     StartRxPair = 500,
@@ -202,7 +208,11 @@ public enum MavCmd : ushort
     NavFencePolygonVertexExclusion = 5002,
     NavFenceCircleInclusion = 5003,
     NavFenceCircleExclusion = 5004,
-    NavRallyPoint = 5100
+    NavRallyPoint = 5100,
+    DoStartMagCal = 42424,
+    DoAcceptMagCal = 42425,
+    DoCancelMagCal = 42426,
+    AccelCalVehiclePos = 42429
 }
 
 /// <summary>
@@ -395,4 +405,53 @@ public enum PositionTargetTypemask : ushort
     ForceSet = 512,
     YawIgnore = 1024,
     YawRateIgnore = 2048
+}
+
+/// <summary>
+/// MAV_PARAM_TYPE: Parameter data type encoding in PARAM_VALUE and PARAM_SET.
+/// </summary>
+public enum MavParamType : byte
+{
+    Uint8 = 1,
+    Int8 = 2,
+    Uint16 = 3,
+    Int16 = 4,
+    Uint32 = 5,
+    Int32 = 6,
+    Uint64 = 7,
+    Int64 = 8,
+    Real32 = 9,
+    Real64 = 10
+}
+
+/// <summary>
+/// MAV_LANDED_STATE: Vehicle ground/flight contact state reported in EXTENDED_SYS_STATE.
+/// </summary>
+public enum MavLandedState : byte
+{
+    Undefined = 0,
+    OnGround = 1,
+    InAir = 2,
+    Takeoff = 3,
+    Landing = 4
+}
+
+/// <summary>
+/// EKF_STATUS_FLAGS: Flags in ArduPilot EKF_STATUS_REPORT (#193).
+/// </summary>
+[Flags]
+public enum EkfStatusFlags : ushort
+{
+    None = 0,
+    Attitude = 1,
+    VelocityHoriz = 2,
+    VelocityVert = 4,
+    PosHorizRel = 8,
+    PosHorizAbs = 16,
+    PosVertAbs = 32,
+    PosVertAgl = 64,
+    ConstPosMode = 128,
+    PredPosHorizRel = 256,
+    PredPosHorizAbs = 512,
+    Uninitialized = 1024
 }

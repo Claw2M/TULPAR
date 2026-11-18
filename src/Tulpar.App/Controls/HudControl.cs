@@ -47,12 +47,29 @@ public sealed class HudControl : FrameworkElement
     private static readonly FontFamily InstrumentFontFamily = CreateInstrumentFontFamily();
     private static readonly Typeface RegularTypeface = new(InstrumentFontFamily, FontStyles.Normal, FontWeights.Normal, FontStretches.Normal);
     private static readonly Typeface BoldTypeface = new(InstrumentFontFamily, FontStyles.Normal, FontWeights.Bold, FontStretches.Normal);
+    private static readonly int[] PitchLadderRungs = [-20, -10, 10, 20];
+    private static readonly double[] RollBankAngles = [-45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0];
+
+    // Cached per-instance geometries/transforms to eliminate 60 FPS heap allocations during OnRender
+    private readonly RectangleGeometry _compassClip = new();
+    private readonly RectangleGeometry _leftTapeClip = new();
+    private readonly RectangleGeometry _rightTapeClip = new();
+    private readonly RectangleGeometry _horizonClip = new();
+    private readonly RectangleGeometry _surfaceSpeedClip = new();
+    private readonly RectangleGeometry _surfaceRoseClip = new();
+    private readonly RotateTransform _horizonRotate = new();
+    private readonly LineSegment _rollPointerSeg1 = new(default, true);
+    private readonly LineSegment _rollPointerSeg2 = new(default, true);
+    private readonly PathFigure _rollPointerFigure;
+    private readonly PathGeometry _rollPointerGeometry;
 
     public HudControl()
     {
         ClipToBounds = true;
         SnapsToDevicePixels = true;
         UseLayoutRounding = true;
+        _rollPointerFigure = new PathFigure(default, [_rollPointerSeg1, _rollPointerSeg2], closed: true);
+        _rollPointerGeometry = new PathGeometry([_rollPointerFigure]);
     }
 
     public TelemetrySnapshot? Snapshot
@@ -93,9 +110,11 @@ public sealed class HudControl : FrameworkElement
         // Pure black canvas with 1px #3a3a3f hairline frame (zero drop shadows/gradients)
         dc.DrawRoundedRectangle(CanvasNightBrush, HairlinePen, new Rect(0.5, 0.5, w - 1.0, h - 1.0), 4.0, 4.0);
 
+        bool isCompact = w < 250.0 || h < 210.0;
         const double pad = 8.0;
         const double headerH = 22.0;
-        const double footerH = 22.0;
+        const double telemetryStripH = 15.0;
+        double footerH = isCompact ? 22.0 : 22.0 + telemetryStripH + 3.0;
         const double compassH = 24.0;
 
         Rect compassRect = new(pad + 54.0, pad + headerH, Math.Max(60.0, w - (pad + 54.0) * 2.0), compassH);
@@ -114,6 +133,7 @@ public sealed class HudControl : FrameworkElement
             DrawAerialInstrumentLayout(dc, w, instrumentTop, instrumentH, state, dpi);
         }
 
+        DrawTelemetryOverlays(dc, w, h, pad, headerH, compassH, telemetryStripH, isCompact, state, dpi);
         DrawCornerBadges(dc, w, h, pad, state, dpi);
 
         if (state.LinkLost)
@@ -122,7 +142,7 @@ public sealed class HudControl : FrameworkElement
         }
     }
 
-    private static void DrawAerialInstrumentLayout(
+    private void DrawAerialInstrumentLayout(
         DrawingContext dc,
         double totalWidth,
         double instrumentTop,
@@ -154,7 +174,7 @@ public sealed class HudControl : FrameworkElement
         }
     }
 
-    private static void DrawArtificialHorizon(DrawingContext dc, Rect rect, HudRenderState state, double dpi)
+    private void DrawArtificialHorizon(DrawingContext dc, Rect rect, HudRenderState state, double dpi)
     {
         dc.DrawRoundedRectangle(CanvasNightSoftBrush, HairlinePen, rect, 4.0, 4.0);
 
@@ -168,8 +188,11 @@ public sealed class HudControl : FrameworkElement
         double rollRadius = Math.Min(rect.Width, rect.Height) * 0.42;
         DrawRollArc(dc, cx, cy, rollRadius, state.RollDeg);
 
-        dc.PushClip(new RectangleGeometry(rect));
-        dc.PushTransform(new RotateTransform(-state.RollDeg, cx, cy));
+        dc.PushClip(SetClipRect(_horizonClip, rect));
+        _horizonRotate.Angle = -state.RollDeg;
+        _horizonRotate.CenterX = cx;
+        _horizonRotate.CenterY = cy;
+        dc.PushTransform(_horizonRotate);
 
         double horizonY = cy + pitchOffsetPx;
         double halfSpan = Math.Max(rect.Width, rect.Height);
@@ -180,8 +203,7 @@ public sealed class HudControl : FrameworkElement
         dc.DrawLine(PrimaryVectorPen, new Point(cx + centerGap, horizonY), new Point(cx + halfSpan, horizonY));
 
         // Pitch ladder rungs (-20, -10, +10, +20)
-        int[] rungs = [-20, -10, 10, 20];
-        foreach (int deg in rungs)
+        foreach (int deg in PitchLadderRungs)
         {
             double rungY = horizonY - deg * pxPerDeg;
             double inner = 16.0 * ladderScale;
@@ -212,14 +234,13 @@ public sealed class HudControl : FrameworkElement
         dc.DrawEllipse(OnPrimaryBrush, null, new Point(cx, cy), 1.8, 1.8);
     }
 
-    private static void DrawRollArc(DrawingContext dc, double cx, double cy, double radius, double rollDeg)
+    private void DrawRollArc(DrawingContext dc, double cx, double cy, double radius, double rollDeg)
     {
         if (radius < 28.0)
         {
             return;
         }
 
-        double[] bankAngles = [-45.0, -30.0, -15.0, 0.0, 15.0, 30.0, 45.0];
         Point? prev = null;
 
         for (int deg = -45; deg <= 45; deg += 5)
@@ -233,7 +254,7 @@ public sealed class HudControl : FrameworkElement
             prev = pt;
         }
 
-        foreach (double angle in bankAngles)
+        foreach (double angle in RollBankAngles)
         {
             double rad = (angle - 90.0) * (Math.PI / 180.0);
             double tickLen = angle == 0.0 ? 7.0 : 5.0;
@@ -250,21 +271,16 @@ public sealed class HudControl : FrameworkElement
         Point left = new(cx + baseR * Math.Cos(pointerRad - 0.08), cy + baseR * Math.Sin(pointerRad - 0.08));
         Point right = new(cx + baseR * Math.Cos(pointerRad + 0.08), cy + baseR * Math.Sin(pointerRad + 0.08));
 
-        var tri = new StreamGeometry();
-        using (StreamGeometryContext ctx = tri.Open())
-        {
-            ctx.BeginFigure(tip, true, true);
-            ctx.LineTo(left, true, false);
-            ctx.LineTo(right, true, false);
-        }
-        tri.Freeze();
-        dc.DrawGeometry(OnPrimaryBrush, null, tri);
+        _rollPointerFigure.StartPoint = tip;
+        _rollPointerSeg1.Point = left;
+        _rollPointerSeg2.Point = right;
+        dc.DrawGeometry(OnPrimaryBrush, null, _rollPointerGeometry);
     }
 
-    private static void DrawTopCompassTape(DrawingContext dc, Rect rect, double rawHeadingDeg, double dpi)
+    private void DrawTopCompassTape(DrawingContext dc, Rect rect, double rawHeadingDeg, double dpi)
     {
         dc.DrawRoundedRectangle(CanvasNightSoftBrush, HairlinePen, rect, 4.0, 4.0);
-        dc.PushClip(new RectangleGeometry(rect));
+        dc.PushClip(SetClipRect(_compassClip, rect));
 
         double heading = HudProjection.NormalizeHeading(rawHeadingDeg);
         double cx = rect.Left + rect.Width / 2.0;
@@ -306,10 +322,10 @@ public sealed class HudControl : FrameworkElement
         dc.DrawText(hdgFt, new Point(cx - hdgFt.Width / 2.0, hdgBox.Top + (hdgBox.Height - hdgFt.Height) / 2.0));
     }
 
-    private static void DrawSpeedTape(DrawingContext dc, Rect rect, HudRenderState state, double dpi)
+    private void DrawSpeedTape(DrawingContext dc, Rect rect, HudRenderState state, double dpi)
     {
         dc.DrawRoundedRectangle(CanvasNightSoftBrush, HairlinePen, rect, 4.0, 4.0);
-        dc.PushClip(new RectangleGeometry(rect));
+        dc.PushClip(SetClipRect(_leftTapeClip, rect));
 
         double primarySpeed = state.ShowAirspeed ? state.AirspeedMps : state.GroundspeedMps;
         string primaryTag = state.ShowAirspeed ? "IAS" : "GS";
@@ -360,10 +376,10 @@ public sealed class HudControl : FrameworkElement
         }
     }
 
-    private static void DrawAltitudeAndVsiTape(DrawingContext dc, Rect rect, HudRenderState state, double dpi)
+    private void DrawAltitudeAndVsiTape(DrawingContext dc, Rect rect, HudRenderState state, double dpi)
     {
         dc.DrawRoundedRectangle(CanvasNightSoftBrush, HairlinePen, rect, 4.0, 4.0);
-        dc.PushClip(new RectangleGeometry(rect));
+        dc.PushClip(SetClipRect(_rightTapeClip, rect));
 
         double alt = state.AltitudeRelMeters;
         double cy = rect.Top + rect.Height / 2.0;
@@ -405,7 +421,7 @@ public sealed class HudControl : FrameworkElement
         dc.DrawText(vsiFt, new Point(rect.Right - vsiFt.Width - 4.0, rect.Bottom - vsiFt.Height - 2.0));
     }
 
-    private static void DrawSurfaceInstrumentLayout(DrawingContext dc, Rect area, HudRenderState state, double dpi)
+    private void DrawSurfaceInstrumentLayout(DrawingContext dc, Rect area, HudRenderState state, double dpi)
     {
         bool isCompact = area.Height < 110.0 || area.Width < 240.0;
         double tiltBarH = isCompact ? 24.0 : 30.0;
@@ -421,7 +437,7 @@ public sealed class HudControl : FrameworkElement
 
         // Ground / water speed readout panel (left)
         dc.DrawRoundedRectangle(CanvasNightSoftBrush, HairlinePen, speedRect, 4.0, 4.0);
-        dc.PushClip(new RectangleGeometry(speedRect));
+        dc.PushClip(SetClipRect(_surfaceSpeedClip, speedRect));
 
         double titlePadTop = isCompact ? 3.0 : 6.0;
         FormattedText gsTitle = CreateText(isCompact ? "GS" : "SOG / GS", isCompact ? 7.5 : 9.0, OnPrimaryMuteBrush, true, dpi);
@@ -461,7 +477,7 @@ public sealed class HudControl : FrameworkElement
 
         // 360-degree compass rose & heading vector (right/center)
         dc.DrawRoundedRectangle(CanvasNightSoftBrush, HairlinePen, roseArea, 4.0, 4.0);
-        dc.PushClip(new RectangleGeometry(roseArea));
+        dc.PushClip(SetClipRect(_surfaceRoseClip, roseArea));
 
         FormattedText roseLabel = CreateText(isCompact ? "HDG" : "HDG ROSE", isCompact ? 7.5 : 8.5, OnPrimaryMuteBrush, true, dpi);
         dc.DrawText(roseLabel, new Point(roseArea.Left + (isCompact ? 6.0 : 8.0), roseArea.Top + (isCompact ? 4.0 : 6.0)));
@@ -540,6 +556,84 @@ public sealed class HudControl : FrameworkElement
                 null,
                 new Rect(markerX - 3.0, trackY - 5.5, 6.0, 11.0));
         }
+    }
+
+    private static RectangleGeometry SetClipRect(RectangleGeometry clip, Rect rect)
+    {
+        if (clip.Rect != rect)
+        {
+            clip.Rect = rect;
+        }
+        return clip;
+    }
+
+    private static void DrawTelemetryOverlays(
+        DrawingContext dc,
+        double w,
+        double h,
+        double pad,
+        double headerH,
+        double compassH,
+        double telemetryStripH,
+        bool isCompact,
+        HudRenderState state,
+        double dpi)
+    {
+        string batteryText = HudProjection.FormatBatteryReadout(state.BatteryVoltageVolts, state.BatteryRemainingPercent);
+        string gpsText = HudProjection.FormatGpsReadout(state.GpsFixType, state.SatellitesVisible);
+        string throttleText = HudProjection.FormatThrottleReadout(state.ThrottlePercent);
+        string wpText = HudProjection.FormatActiveWaypointReadout(state.ActiveWaypointSeq);
+        bool hasWp = state.ActiveWaypointSeq >= 0 && !string.IsNullOrEmpty(wpText);
+
+        if (isCompact)
+        {
+            double pocketTop = pad + headerH;
+            double pocketW = 50.0;
+            double leftX = pad;
+            double rightX = w - pad - pocketW;
+
+            if (compassH >= 20.0)
+            {
+                FormattedText batFt = CreateConstrainedText(batteryText, 7.0, OnPrimaryMuteBrush, false, pocketW, dpi);
+                dc.DrawText(batFt, new Point(leftX, pocketTop + 1.0));
+
+                FormattedText gpsFt = CreateConstrainedText(gpsText, 7.0, OnPrimaryMuteBrush, false, pocketW, dpi);
+                dc.DrawText(gpsFt, new Point(leftX, pocketTop + 12.0));
+
+                FormattedText thrFt = CreateConstrainedText(throttleText, 7.0, OnPrimaryMuteBrush, false, pocketW, dpi);
+                dc.DrawText(thrFt, new Point(rightX + pocketW - thrFt.Width, pocketTop + 1.0));
+
+                if (hasWp)
+                {
+                    FormattedText wpFt = CreateConstrainedText(wpText, 7.0, OnPrimaryMuteBrush, true, pocketW, dpi);
+                    dc.DrawText(wpFt, new Point(rightX + pocketW - wpFt.Width, pocketTop + 12.0));
+                }
+            }
+
+            return;
+        }
+
+        double stripY = h - pad - 18.0 - 3.0 - telemetryStripH;
+        double stripW = Math.Max(60.0, w - pad * 2.0);
+        int cellCount = hasWp ? 4 : 3;
+        const double gap = 4.0;
+        double cellW = (stripW - gap * (cellCount - 1)) / cellCount;
+
+        DrawTelemetryCell(dc, new Rect(pad, stripY, cellW, telemetryStripH), batteryText, false, dpi);
+        DrawTelemetryCell(dc, new Rect(pad + (cellW + gap), stripY, cellW, telemetryStripH), gpsText, false, dpi);
+        DrawTelemetryCell(dc, new Rect(pad + (cellW + gap) * 2.0, stripY, cellW, telemetryStripH), throttleText, false, dpi);
+
+        if (hasWp)
+        {
+            DrawTelemetryCell(dc, new Rect(pad + (cellW + gap) * 3.0, stripY, cellW, telemetryStripH), wpText, true, dpi);
+        }
+    }
+
+    private static void DrawTelemetryCell(DrawingContext dc, Rect rect, string text, bool bold, double dpi)
+    {
+        dc.DrawRoundedRectangle(CanvasNightSoftBrush, HairlinePen, rect, 2.0, 2.0);
+        FormattedText ft = CreateConstrainedText(text, 8.0, OnPrimaryMuteBrush, bold, Math.Max(8.0, rect.Width - 6.0), dpi);
+        dc.DrawText(ft, new Point(rect.Left + (rect.Width - ft.Width) / 2.0, rect.Top + (rect.Height - ft.Height) / 2.0));
     }
 
     private static void DrawCornerBadges(DrawingContext dc, double w, double h, double pad, HudRenderState state, double dpi)

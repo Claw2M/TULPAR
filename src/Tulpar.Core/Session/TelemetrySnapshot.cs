@@ -43,7 +43,30 @@ public sealed record TelemetrySnapshot(
     bool HasHome = false,
     int ActiveWaypointSeq = 0,
     DateTimeOffset LastHeartbeatUtc = default,
-    DateTimeOffset UpdatedUtc = default)
+    DateTimeOffset UpdatedUtc = default,
+    double CpuLoadPercent = 0.0,
+    double DropRateCommPercent = 0.0,
+    int BatteryCurrentConsumedMah = -1,
+    double BatteryTemperatureCelsius = double.NaN,
+    uint SensorHealthBits = 0,
+    ushort EkfFlags = 0,
+    float VibrationX = 0f,
+    float VibrationY = 0f,
+    float VibrationZ = 0f,
+    int RcChannelCount = 0,
+    ushort RcCh1 = 0,
+    ushort RcCh2 = 0,
+    ushort RcCh3 = 0,
+    ushort RcCh4 = 0,
+    ushort RcCh5 = 0,
+    ushort RcCh6 = 0,
+    ushort RcCh7 = 0,
+    ushort RcCh8 = 0,
+    int LastReachedWaypointSeq = -1,
+    MavVtolState VtolState = MavVtolState.Undefined,
+    MavLandedState LandedState = MavLandedState.Undefined)
 {
+    public IReadOnlyList<ushort> RcChannels => [RcCh1, RcCh2, RcCh3, RcCh4, RcCh5, RcCh6, RcCh7, RcCh8];
+
     public static TelemetrySnapshot Empty { get; } = new();
 }

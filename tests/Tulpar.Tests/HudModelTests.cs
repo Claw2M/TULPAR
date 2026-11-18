@@ -5,6 +5,7 @@ using System.Windows.Media;
 using System.Windows.Media.Imaging;
 using Tulpar.App.Controls;
 using Tulpar.Core.Mavlink;
+using Tulpar.Core.Missions;
 using Tulpar.Core.Session;
 using Tulpar.Core.Vehicles;
 
@@ -479,6 +480,170 @@ public class HudModelTests
             var ultraCompact = new RenderTargetBitmap(180, 160, 96, 96, PixelFormats.Pbgra32);
             ultraCompact.Render(surfaceHud);
             Assert.Equal(180, ultraCompact.PixelWidth);
+        });
+    }
+
+    [Fact]
+    public void HudProjection_ProjectsAndFormatsBatteryGpsThrottleAndWaypointOverlays()
+    {
+        var snapshot = new TelemetrySnapshot(
+            IsConnected: true,
+            VehicleCategory: VehicleCategory.FixedWing,
+            ModeName: "AUTO",
+            IsArmed: true,
+            BatteryVoltageVolts: 22.8,
+            BatteryRemainingPercent: 74,
+            GpsFixType: GpsFixType.Fix3D,
+            SatellitesVisible: 16,
+            ThrottlePercent: 62,
+            ActiveWaypointSeq: 4);
+
+        HudRenderState state = HudProjection.FromSnapshot(snapshot, new FixedWingProfile());
+        Assert.Equal(22.8, state.BatteryVoltageVolts, 3);
+        Assert.Equal(74, state.BatteryRemainingPercent);
+        Assert.Equal(GpsFixType.Fix3D, state.GpsFixType);
+        Assert.Equal(16, state.SatellitesVisible);
+        Assert.Equal(62, state.ThrottlePercent);
+        Assert.Equal(4, state.ActiveWaypointSeq);
+
+        Assert.Equal("22.8V / 74%", HudProjection.FormatBatteryReadout(state.BatteryVoltageVolts, state.BatteryRemainingPercent));
+        Assert.Equal("3D / 16", HudProjection.FormatGpsReadout(state.GpsFixType, state.SatellitesVisible));
+        Assert.Equal("THR %62", HudProjection.FormatThrottleReadout(state.ThrottlePercent));
+        Assert.Equal("WP #4", HudProjection.FormatActiveWaypointReadout(state.ActiveWaypointSeq));
+
+        // Edge sanitization: NaN voltage, out-of-range throttle/percent, negative WP
+        var edgeSnapshot = new TelemetrySnapshot(
+            BatteryVoltageVolts: double.NaN,
+            BatteryRemainingPercent: 140,
+            GpsFixType: GpsFixType.RtkFixed,
+            SatellitesVisible: -3,
+            ThrottlePercent: 150,
+            ActiveWaypointSeq: -1);
+
+        HudRenderState edgeState = HudProjection.FromSnapshot(edgeSnapshot, null);
+        Assert.Equal(0.0, edgeState.BatteryVoltageVolts);
+        Assert.Equal(100, edgeState.BatteryRemainingPercent);
+        Assert.Equal(GpsFixType.RtkFixed, edgeState.GpsFixType);
+        Assert.Equal(0, edgeState.SatellitesVisible);
+        Assert.Equal(100, edgeState.ThrottlePercent);
+        Assert.Equal(-1, edgeState.ActiveWaypointSeq);
+        Assert.Equal("--V / 100%", HudProjection.FormatBatteryReadout(edgeState.BatteryVoltageVolts, edgeState.BatteryRemainingPercent));
+        Assert.Equal("RTK FIX / 0", HudProjection.FormatGpsReadout(edgeState.GpsFixType, edgeState.SatellitesVisible));
+        Assert.Equal("THR %100", HudProjection.FormatThrottleReadout(edgeState.ThrottlePercent));
+        Assert.Equal(string.Empty, HudProjection.FormatActiveWaypointReadout(edgeState.ActiveWaypointSeq));
+        Assert.Equal("--V / --%", HudProjection.FormatBatteryReadout(0.0, -1));
+
+        // Multi-frame HudControl render pass with cached geometries/transforms
+        RunOnStaThread(() =>
+        {
+            var hud = new HudControl { Width = 360, Height = 260, Snapshot = snapshot, VehicleProfile = new FixedWingProfile() };
+            hud.Measure(new Size(360, 260));
+            hud.Arrange(new Rect(0, 0, 360, 260));
+
+            var bmp1 = new RenderTargetBitmap(360, 260, 96, 96, PixelFormats.Pbgra32);
+            bmp1.Render(hud);
+
+            hud.Snapshot = snapshot with { RollDeg = 18.0, PitchDeg = 6.0, HeadingDeg = 90.0, ActiveWaypointSeq = -1 };
+            hud.Measure(new Size(360, 260));
+            hud.Arrange(new Rect(0, 0, 360, 260));
+            var bmp2 = new RenderTargetBitmap(360, 260, 96, 96, PixelFormats.Pbgra32);
+            bmp2.Render(hud);
+
+            List<Rect> glyphs = CollectGlyphBounds(VisualTreeHelper.GetDrawing(hud));
+            Assert.True(glyphs.Count > 0);
+        });
+    }
+
+    [Fact]
+    public void ElevationProfileControl_RendersEmptyAndPopulatedFlightMetricsCleanlyOnSta()
+    {
+        RunOnStaThread(() =>
+        {
+            var control = new ElevationProfileControl();
+            control.Measure(new Size(double.PositiveInfinity, double.PositiveInfinity));
+            Assert.Equal(new Size(360, 110), control.DesiredSize);
+
+            // Empty / null state renders centered placeholder cleanly
+            control.Width = 360;
+            control.Height = 110;
+            control.Measure(new Size(360, 110));
+            control.Arrange(new Rect(0, 0, 360, 110));
+
+            var emptyBmp = new RenderTargetBitmap(360, 110, 96, 96, PixelFormats.Pbgra32);
+            emptyBmp.Render(control);
+            List<Rect> emptyGlyphs = CollectGlyphBounds(VisualTreeHelper.GetDrawing(control));
+            Assert.NotEmpty(emptyGlyphs);
+
+            // Single-point state also shows placeholder
+            var singleItem = new MissionItem[]
+            {
+                new(0, MavFrame.GlobalRelativeAltInt, MavCmd.NavTakeoff, 0f, 0f, 0f, 0f, 39.9200, 32.8540, 25f)
+            };
+            FlightMetricsSummary singleSummary = FlightMetricsEstimator.Estimate(singleItem, cruiseSpeedMps: 18.0);
+            control.ProfileLegs = singleSummary.Legs;
+            control.MissionItems = singleItem;
+            control.Measure(new Size(360, 110));
+            control.Arrange(new Rect(0, 0, 360, 110));
+            var singleBmp = new RenderTargetBitmap(360, 110, 96, 96, PixelFormats.Pbgra32);
+            singleBmp.Render(control);
+            Assert.NotEmpty(CollectGlyphBounds(VisualTreeHelper.GetDrawing(control)));
+
+            // Full mission from FlightMetricsEstimator with Takeoff, Waypoints, RTL, and SelectedSeq
+            var missionItems = new MissionItem[]
+            {
+                new(0, MavFrame.GlobalRelativeAltInt, MavCmd.NavTakeoff, 15f, 0f, 0f, 0f, 39.9200, 32.8540, 25f),
+                new(1, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0f, 0f, 0f, 0f, 39.9240, 32.8580, 95f),
+                new(2, MavFrame.GlobalRelativeAltInt, MavCmd.NavWaypoint, 0f, 0f, 0f, 0f, 39.9280, 32.8620, 140f),
+                new(3, MavFrame.GlobalRelativeAltInt, MavCmd.NavReturnToLaunch, 0f, 0f, 0f, 0f, 39.9200, 32.8540, 40f)
+            };
+            FlightMetricsSummary summary = FlightMetricsEstimator.Estimate(missionItems, cruiseSpeedMps: 18.0);
+
+            control.ProfileLegs = summary.Legs;
+            control.MissionItems = missionItems;
+            control.SelectedSeq = 2;
+            control.Measure(new Size(360, 110));
+            control.Arrange(new Rect(0, 0, 360, 110));
+
+            var fullBmp = new RenderTargetBitmap(360, 110, 96, 96, PixelFormats.Pbgra32);
+            fullBmp.Render(control);
+
+            byte[] pixels = new byte[360 * 110 * 4];
+            fullBmp.CopyPixels(pixels, 360 * 4, 0);
+
+            bool hasSelectedSkyBlue = false;
+            bool hasTakeoffGreen = false;
+            bool hasRtlAmber = false;
+            for (int i = 0; i < pixels.Length; i += 4)
+            {
+                byte b = pixels[i];
+                byte g = pixels[i + 1];
+                byte r = pixels[i + 2];
+
+                // #38BDF8 (R=56, G=189, B=248)
+                if (b > 200 && g > 140 && r < 100)
+                {
+                    hasSelectedSkyBlue = true;
+                }
+
+                // #34C759 (R=52, G=199, B=89)
+                if (g > 160 && r < 90 && b < 120)
+                {
+                    hasTakeoffGreen = true;
+                }
+
+                // #FFCC00 (R=255, G=204, B=0)
+                if (r > 220 && g > 170 && b < 30)
+                {
+                    hasRtlAmber = true;
+                }
+            }
+
+            Assert.True(hasSelectedSkyBlue, "Expected #38BDF8 selected waypoint halo/label pixels.");
+            Assert.True(hasTakeoffGreen, "Expected #34C759 takeoff vertex pixels.");
+            Assert.True(hasRtlAmber, "Expected #FFCC00 RTL/Land vertex pixels.");
+
+            List<Rect> populatedGlyphs = CollectGlyphBounds(VisualTreeHelper.GetDrawing(control));
+            Assert.True(populatedGlyphs.Count >= 4);
         });
     }
 

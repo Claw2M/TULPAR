@@ -5,6 +5,7 @@ using System.Net.Http.Headers;
 using System.Net.Sockets;
 using System.Text;
 using System.Text.Json;
+using Microsoft.Data.Sqlite;
 
 namespace Tulpar.MapHost;
 
@@ -310,6 +311,10 @@ public sealed class MapHttpServer : IAsyncDisposable
                 {
                     await HandleClientConnectionAsync(client, ct).ConfigureAwait(false);
                 }
+                catch
+                {
+                    // Prevent unobserved background exceptions on client socket handlers.
+                }
                 finally
                 {
                     _activeConnections.TryRemove(connId, out _);
@@ -394,6 +399,42 @@ public sealed class MapHttpServer : IAsyncDisposable
                     }
                     catch (SocketException)
                     {
+                        break;
+                    }
+                    catch (SqliteException)
+                    {
+                        try
+                        {
+                            await WriteResponseAsync(
+                                stream,
+                                HttpStatusCode.InternalServerError,
+                                "text/plain; charset=utf-8",
+                                "Tile store error"u8.ToArray(),
+                                headOnly: request.Method.Equals("HEAD", StringComparison.OrdinalIgnoreCase),
+                                closeConnection: true,
+                                serverCt).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                        }
+                        break;
+                    }
+                    catch (Exception) when (!serverCt.IsCancellationRequested)
+                    {
+                        try
+                        {
+                            await WriteResponseAsync(
+                                stream,
+                                HttpStatusCode.InternalServerError,
+                                "text/plain; charset=utf-8",
+                                "Internal Server Error"u8.ToArray(),
+                                headOnly: request.Method.Equals("HEAD", StringComparison.OrdinalIgnoreCase),
+                                closeConnection: true,
+                                serverCt).ConfigureAwait(false);
+                        }
+                        catch
+                        {
+                        }
                         break;
                     }
 
@@ -591,84 +632,113 @@ public sealed class MapHttpServer : IAsyncDisposable
             return;
         }
 
-        // 1. Registered local .mbtiles archive
-        if (_mbtilesLayers.TryGetValue(layerId, out RegisteredMbtilesLayer? mbtilesLayer))
+        try
         {
-            byte[]? mbTile = mbtilesLayer.Reader.TryGetTileXyz(z, x, y);
-            if (mbTile is null)
+            // 1. Registered local .mbtiles archive
+            if (_mbtilesLayers.TryGetValue(layerId, out RegisteredMbtilesLayer? mbtilesLayer))
+            {
+                byte[]? mbTile = mbtilesLayer.Reader.TryGetTileXyz(z, x, y);
+                if (mbTile is null)
+                {
+                    await WriteEmptyResponseAsync(stream, HttpStatusCode.NoContent, closeConnection, ct)
+                        .ConfigureAwait(false);
+                    return;
+                }
+
+                string mbContentType = TileFormatHelper.DetectImageContentType(mbTile, mbtilesLayer.Reader.Format);
+                await WriteResponseAsync(
+                    stream,
+                    HttpStatusCode.OK,
+                    mbContentType,
+                    mbTile,
+                    headOnly: headOnly,
+                    closeConnection: closeConnection,
+                    ct).ConfigureAwait(false);
+                return;
+            }
+
+            // 2. Registered XYZ tile provider (Cache-First -> Upstream -> 204 fallback)
+            if (!_providers.TryGetValue(layerId, out TileProviderConfig? provider))
+            {
+                await WriteResponseAsync(
+                    stream,
+                    HttpStatusCode.NotFound,
+                    "text/plain; charset=utf-8",
+                    Encoding.UTF8.GetBytes("Unknown layer"),
+                    headOnly: headOnly,
+                    closeConnection: closeConnection,
+                    ct).ConfigureAwait(false);
+                return;
+            }
+
+            byte[]? cached = await _cache.TryGetTileAsync(provider.Id, z, x, y, ct).ConfigureAwait(false);
+            if (cached is not null)
+            {
+                string cachedContentType = TileFormatHelper.DetectImageContentType(cached, null);
+                await WriteResponseAsync(
+                    stream,
+                    HttpStatusCode.OK,
+                    cachedContentType,
+                    cached,
+                    headOnly: headOnly,
+                    closeConnection: closeConnection,
+                    ct).ConfigureAwait(false);
+                return;
+            }
+
+            if (z < provider.MinZoom || z > provider.MaxZoom)
             {
                 await WriteEmptyResponseAsync(stream, HttpStatusCode.NoContent, closeConnection, ct)
                     .ConfigureAwait(false);
                 return;
             }
 
-            string mbContentType = TileFormatHelper.DetectImageContentType(mbTile, mbtilesLayer.Reader.Format);
+            byte[]? fetched = await TryFetchUpstreamTileAsync(provider, z, x, y, ct).ConfigureAwait(false);
+            if (fetched is null || fetched.Length == 0)
+            {
+                await WriteEmptyResponseAsync(stream, HttpStatusCode.NoContent, closeConnection, ct)
+                    .ConfigureAwait(false);
+                return;
+            }
+
+            await _cache.PutTileAsync(provider.Id, z, x, y, fetched, ct).ConfigureAwait(false);
+
+            string fetchedContentType = TileFormatHelper.DetectImageContentType(fetched, null);
             await WriteResponseAsync(
                 stream,
                 HttpStatusCode.OK,
-                mbContentType,
-                mbTile,
+                fetchedContentType,
+                fetched,
                 headOnly: headOnly,
                 closeConnection: closeConnection,
                 ct).ConfigureAwait(false);
-            return;
         }
-
-        // 2. Registered XYZ tile provider (Cache-First -> Upstream -> 204 fallback)
-        if (!_providers.TryGetValue(layerId, out TileProviderConfig? provider))
+        catch (SqliteException)
         {
             await WriteResponseAsync(
                 stream,
-                HttpStatusCode.NotFound,
+                HttpStatusCode.InternalServerError,
                 "text/plain; charset=utf-8",
-                Encoding.UTF8.GetBytes("Unknown layer"),
+                "Tile store error"u8.ToArray(),
                 headOnly: headOnly,
                 closeConnection: closeConnection,
                 ct).ConfigureAwait(false);
-            return;
         }
-
-        byte[]? cached = await _cache.TryGetTileAsync(provider.Id, z, x, y, ct).ConfigureAwait(false);
-        if (cached is not null)
+        catch (Exception ex) when (
+            ex is not OperationCanceledException &&
+            ex is not IOException &&
+            ex is not SocketException &&
+            ex is not ObjectDisposedException)
         {
-            string cachedContentType = TileFormatHelper.DetectImageContentType(cached, null);
             await WriteResponseAsync(
                 stream,
-                HttpStatusCode.OK,
-                cachedContentType,
-                cached,
+                HttpStatusCode.InternalServerError,
+                "text/plain; charset=utf-8",
+                "Internal Server Error"u8.ToArray(),
                 headOnly: headOnly,
                 closeConnection: closeConnection,
                 ct).ConfigureAwait(false);
-            return;
         }
-
-        if (z < provider.MinZoom || z > provider.MaxZoom)
-        {
-            await WriteEmptyResponseAsync(stream, HttpStatusCode.NoContent, closeConnection, ct)
-                .ConfigureAwait(false);
-            return;
-        }
-
-        byte[]? fetched = await TryFetchUpstreamTileAsync(provider, z, x, y, ct).ConfigureAwait(false);
-        if (fetched is null || fetched.Length == 0)
-        {
-            await WriteEmptyResponseAsync(stream, HttpStatusCode.NoContent, closeConnection, ct)
-                .ConfigureAwait(false);
-            return;
-        }
-
-        await _cache.PutTileAsync(provider.Id, z, x, y, fetched, ct).ConfigureAwait(false);
-
-        string fetchedContentType = TileFormatHelper.DetectImageContentType(fetched, null);
-        await WriteResponseAsync(
-            stream,
-            HttpStatusCode.OK,
-            fetchedContentType,
-            fetched,
-            headOnly: headOnly,
-            closeConnection: closeConnection,
-            ct).ConfigureAwait(false);
     }
 
     private async Task<byte[]?> TryFetchUpstreamTileAsync(
@@ -959,6 +1029,7 @@ public sealed class MapHttpServer : IAsyncDisposable
         HttpStatusCode.BadRequest => "Bad Request",
         HttpStatusCode.NotFound => "Not Found",
         HttpStatusCode.MethodNotAllowed => "Method Not Allowed",
+        HttpStatusCode.InternalServerError => "Internal Server Error",
         _ => statusCode.ToString()
     };
 

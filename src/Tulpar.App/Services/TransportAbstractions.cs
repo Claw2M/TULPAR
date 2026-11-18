@@ -16,7 +16,16 @@ public enum MapEditMode
     None,
     Mission,
     Fence,
-    Bounds
+    Rally,
+    Bounds,
+    Measure
+}
+
+public enum CockpitFormFactor
+{
+    Desktop,
+    Tablet,
+    PhoneLandscape
 }
 
 public readonly record struct MapBounds(double MinLat, double MinLon, double MaxLat, double MaxLon);
@@ -25,10 +34,13 @@ public sealed record LogEntry(
     DateTimeOffset TimestampUtc,
     MavSeverity Severity,
     string Source,
-    string Message)
+    string Message,
+    int RepeatCount = 1)
 {
     public string DisplayLine =>
-        $"[{TimestampUtc.ToLocalTime():HH:mm:ss}] [{Severity.ToString().ToUpperInvariant()}] {Source}: {Message}";
+        RepeatCount > 1
+            ? $"[{TimestampUtc.ToLocalTime():HH:mm:ss}] [{Severity.ToString().ToUpperInvariant()}] {Source}: {Message} (×{RepeatCount})"
+            : $"[{TimestampUtc.ToLocalTime():HH:mm:ss}] [{Severity.ToString().ToUpperInvariant()}] {Source}: {Message}";
 }
 
 public interface ITransportFactory

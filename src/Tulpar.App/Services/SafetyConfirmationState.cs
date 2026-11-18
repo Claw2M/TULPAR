@@ -13,7 +13,8 @@ public enum SafetyActionKind
     Hold,
     Takeoff,
     Land,
-    GuidedFlyHere
+    GuidedFlyHere,
+    StartMission
 }
 
 public sealed record SafetyActionRequest(
@@ -81,6 +82,24 @@ public static class SafetyCommandBuilder
             ? ["QLOITER", "HOLD", "LOITER", "AUTO_LOITER", "BRAKE", "POSHOLD"]
             : ["HOLD", "LOITER", "AUTO_LOITER", "QLOITER", "BRAKE", "POSHOLD"];
 
+        foreach (string preferred in preference)
+        {
+            FlightModeOption? match = modes.FirstOrDefault(m => string.Equals(m.Name, preferred, StringComparison.OrdinalIgnoreCase));
+            if (match is not null)
+            {
+                return match;
+            }
+        }
+
+        return null;
+    }
+
+    public static FlightModeOption? FindPreferredAutoMissionMode(IVehicleProfile profile, MavAutopilot autopilot)
+    {
+        ArgumentNullException.ThrowIfNull(profile);
+
+        IReadOnlyList<FlightModeOption> modes = profile.GetFlightModes(autopilot);
+        string[] preference = ["AUTO", "AUTO_MISSION", "MISSION"];
         foreach (string preferred in preference)
         {
             FlightModeOption? match = modes.FirstOrDefault(m => string.Equals(m.Name, preferred, StringComparison.OrdinalIgnoreCase));

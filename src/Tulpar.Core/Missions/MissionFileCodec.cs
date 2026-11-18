@@ -28,13 +28,14 @@ public static class MissionFileCodec
     public static string ExportQgcWpl110(IReadOnlyList<MissionItem> items)
     {
         ArgumentNullException.ThrowIfNull(items);
+        ValidateItemsForExport(items, nameof(items));
 
         var sb = new StringBuilder();
         sb.Append(QgcHeader).Append('\n');
 
         for (int i = 0; i < items.Count; i++)
         {
-            MissionItem item = items[i] ?? throw new ArgumentException($"Mission item at index {i} is null.", nameof(items));
+            MissionItem item = items[i];
             int currentWp = i == 0 ? 1 : 0;
             MavFrame wplFrame = NormalizeFrameForWplExport(item.Frame);
 
@@ -107,6 +108,17 @@ public static class MissionFileCodec
     public static string ExportJson(MissionDocument doc)
     {
         ArgumentNullException.ThrowIfNull(doc);
+
+        if (doc.Items is not null)
+        {
+            ValidateItemsForExport(doc.Items, nameof(doc));
+        }
+
+        if (doc.FenceItems is not null)
+        {
+            ValidateItemsForExport(doc.FenceItems, nameof(doc));
+        }
+
         return JsonSerializer.Serialize(doc, JsonOptions);
     }
 
@@ -117,16 +129,31 @@ public static class MissionFileCodec
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(json);
 
-        MissionDocument? doc = JsonSerializer.Deserialize<MissionDocument>(json, JsonOptions);
+        MissionDocument? doc;
+        try
+        {
+            doc = JsonSerializer.Deserialize<MissionDocument>(json, JsonOptions);
+        }
+        catch (JsonException ex)
+        {
+            throw new FormatException("Invalid mission JSON.", ex);
+        }
+
         if (doc is null)
         {
             throw new FormatException("JSON content did not deserialize into a MissionDocument.");
         }
 
+        IReadOnlyList<MissionItem> items = doc.Items ?? Array.Empty<MissionItem>();
+        IReadOnlyList<MissionItem> fenceItems = doc.FenceItems ?? Array.Empty<MissionItem>();
+
+        ValidateItemsForImport(items, "items");
+        ValidateItemsForImport(fenceItems, "fenceItems");
+
         return doc with
         {
-            Items = doc.Items ?? Array.Empty<MissionItem>(),
-            FenceItems = doc.FenceItems ?? Array.Empty<MissionItem>()
+            Items = items,
+            FenceItems = fenceItems
         };
     }
 
@@ -199,13 +226,53 @@ public static class MissionFileCodec
             ? result
             : throw new FormatException($"Line {lineNumber}: invalid command id for '{field}': '{value}'.");
 
+    private static void ValidateItemsForExport(IReadOnlyList<MissionItem> items, string paramName)
+    {
+        for (int i = 0; i < items.Count; i++)
+        {
+            MissionItem item = items[i] ?? throw new ArgumentException($"Mission item at index {i} is null.", paramName);
+            if (!IsFiniteItem(item, out string? invalidField))
+            {
+                throw new ArgumentException(
+                    $"Mission item at index {i} has non-finite value in '{invalidField}'.",
+                    paramName);
+            }
+        }
+    }
+
+    private static void ValidateItemsForImport(IReadOnlyList<MissionItem> items, string section)
+    {
+        for (int i = 0; i < items.Count; i++)
+        {
+            MissionItem item = items[i] ?? throw new FormatException($"Mission item in '{section}' at index {i} is null.");
+            if (!IsFiniteItem(item, out string? invalidField))
+            {
+                throw new FormatException(
+                    $"Mission item in '{section}' at index {i} has non-finite value in '{invalidField}'.");
+            }
+        }
+    }
+
+    private static bool IsFiniteItem(MissionItem item, out string? invalidField)
+    {
+        if (!double.IsFinite(item.Latitude)) { invalidField = nameof(item.Latitude); return false; }
+        if (!double.IsFinite(item.Longitude)) { invalidField = nameof(item.Longitude); return false; }
+        if (!float.IsFinite(item.Altitude)) { invalidField = nameof(item.Altitude); return false; }
+        if (!float.IsFinite(item.Param1)) { invalidField = nameof(item.Param1); return false; }
+        if (!float.IsFinite(item.Param2)) { invalidField = nameof(item.Param2); return false; }
+        if (!float.IsFinite(item.Param3)) { invalidField = nameof(item.Param3); return false; }
+        if (!float.IsFinite(item.Param4)) { invalidField = nameof(item.Param4); return false; }
+        invalidField = null;
+        return true;
+    }
+
     private static float ParseFloat(string value, int lineNumber, string field) =>
-        float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float result)
+        float.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out float result) && float.IsFinite(result)
             ? result
-            : throw new FormatException($"Line {lineNumber}: invalid float for '{field}': '{value}'.");
+            : throw new FormatException($"Line {lineNumber}: invalid or non-finite float for '{field}': '{value}'.");
 
     private static double ParseDouble(string value, int lineNumber, string field) =>
-        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double result)
+        double.TryParse(value, NumberStyles.Float, CultureInfo.InvariantCulture, out double result) && double.IsFinite(result)
             ? result
-            : throw new FormatException($"Line {lineNumber}: invalid double for '{field}': '{value}'.");
+            : throw new FormatException($"Line {lineNumber}: invalid or non-finite double for '{field}': '{value}'.");
 }

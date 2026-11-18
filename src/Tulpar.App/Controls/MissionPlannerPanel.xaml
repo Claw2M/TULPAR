@@ -1,54 +1,102 @@
 <UserControl x:Class="Tulpar.App.Controls.MissionPlannerPanel"
              xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
              xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+             xmlns:local="clr-namespace:Tulpar.App.Controls"
              xmlns:svc="clr-namespace:Tulpar.App.Services"
              xmlns:themes="clr-namespace:Tulpar.App.Themes"
              x:Name="PlannerRoot"
              Background="#0A0A0A">
     <UserControl.Resources>
         <themes:EnumDisplayConverter x:Key="EnumDisplayConverter" />
+        <themes:ReferenceEqualityConverter x:Key="ReferenceEqualityConverter" />
+        <BooleanToVisibilityConverter x:Key="BoolToVis" />
     </UserControl.Resources>
-    <Grid>
-        <TabControl Style="{DynamicResource SpaceXTabControlStyle}">
-            <!-- GÖREV PLANLAYICI TAB -->
-            <TabItem Header="GÖREV PLANI (WAYPOINTS)">
-                <Grid Margin="8">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                        <RowDefinition Height="Auto" />
-                    </Grid.RowDefinitions>
+    <Grid Margin="10,8">
+        <Grid.RowDefinitions>
+            <RowDefinition Height="Auto" />
+            <RowDefinition Height="*" />
+            <RowDefinition Height="Auto" />
+        </Grid.RowDefinitions>
 
-                    <!-- Action Toolbar -->
-                    <WrapPanel Grid.Row="0" Margin="0,0,0,6" VerticalAlignment="Center">
-                        <ToggleButton Content="HARİTADAN EKLE"
-                                      IsChecked="{Binding IsMissionMapPickActive, Mode=OneWay}"
-                                      Command="{Binding ToggleMissionMapEditCommand}"
-                                      Margin="0,2,6,2"
-                                      Padding="12,5"
-                                      FontSize="11"
-                                      FontWeight="Bold"
-                                      Cursor="Hand">
-                            <ToggleButton.Style>
-                                <Style TargetType="{x:Type ToggleButton}">
-                                    <Setter Property="Background" Value="#000000" />
-                                    <Setter Property="Foreground" Value="#FFFFFF" />
-                                    <Setter Property="BorderBrush" Value="#FFFFFF" />
-                                    <Setter Property="BorderThickness" Value="1" />
+        <!-- Clean Primary Action Toolbar -->
+        <DockPanel Grid.Row="0" Margin="0,0,0,8" LastChildFill="True">
+            <!-- Right View Switcher + Profile Toggle -->
+            <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,2,0,2">
+                <ToggleButton x:Name="ElevationToggleBtn"
+                              Content="📈 PROFİL"
+                              ToolTip="İrtifa profili grafiğini göster / gizle"
+                              Checked="OnElevationToggleChanged"
+                              Unchecked="OnElevationToggleChanged"
+                              Padding="10,4"
+                              FontSize="10.5"
+                              FontWeight="Bold"
+                              Cursor="Hand"
+                              Margin="0,0,8,0">
+                    <ToggleButton.Style>
+                        <Style TargetType="{x:Type ToggleButton}">
+                            <Setter Property="Background" Value="#000000" />
+                            <Setter Property="Foreground" Value="#8E8E93" />
+                            <Setter Property="BorderBrush" Value="#3A3A3F" />
+                            <Setter Property="BorderThickness" Value="1" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                        <Border x:Name="Pill"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="6"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="Pill" Property="Background" Value="#FFFFFF" />
+                                                <Setter TargetName="Pill" Property="BorderBrush" Value="#FFFFFF" />
+                                                <Setter Property="Foreground" Value="#000000" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ToggleButton.Style>
+                </ToggleButton>
+
+                <Border Background="#000000"
+                        BorderBrush="#3A3A3F"
+                        BorderThickness="1"
+                        CornerRadius="6"
+                        Padding="2"
+                        VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal">
+                        <RadioButton x:Name="VisualModeToggle"
+                                     Content="◈ GÖRSEL ROTA"
+                                     GroupName="MissionViewMode"
+                                     IsChecked="True"
+                                     Checked="OnViewModeChanged"
+                                     Unchecked="OnViewModeChanged"
+                                     Cursor="Hand">
+                            <RadioButton.Style>
+                                <Style TargetType="{x:Type RadioButton}">
+                                    <Setter Property="Foreground" Value="#8E8E93" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="FontFamily" Value="{DynamicResource UiFontFamily}" />
+                                    <Setter Property="FontSize" Value="10.5" />
+                                    <Setter Property="FontWeight" Value="Bold" />
+                                    <Setter Property="Padding" Value="10,4" />
                                     <Setter Property="Template">
                                         <Setter.Value>
-                                            <ControlTemplate TargetType="{x:Type ToggleButton}">
-                                                <Border x:Name="BtnBorder"
+                                            <ControlTemplate TargetType="{x:Type RadioButton}">
+                                                <Border x:Name="Pill"
                                                         Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="32"
+                                                        CornerRadius="4"
                                                         Padding="{TemplateBinding Padding}">
                                                     <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
                                                 </Border>
                                                 <ControlTemplate.Triggers>
                                                     <Trigger Property="IsChecked" Value="True">
-                                                        <Setter TargetName="BtnBorder" Property="Background" Value="#FFFFFF" />
+                                                        <Setter TargetName="Pill" Property="Background" Value="#FFFFFF" />
                                                         <Setter Property="Foreground" Value="#000000" />
                                                     </Trigger>
                                                 </ControlTemplate.Triggers>
@@ -56,206 +104,928 @@
                                         </Setter.Value>
                                     </Setter>
                                 </Style>
-                            </ToggleButton.Style>
-                        </ToggleButton>
+                            </RadioButton.Style>
+                        </RadioButton>
+                        <RadioButton x:Name="TableModeToggle"
+                                     Content="≡ TABLO"
+                                     GroupName="MissionViewMode"
+                                     Checked="OnViewModeChanged"
+                                     Unchecked="OnViewModeChanged"
+                                     Cursor="Hand">
+                            <RadioButton.Style>
+                                <Style TargetType="{x:Type RadioButton}">
+                                    <Setter Property="Foreground" Value="#8E8E93" />
+                                    <Setter Property="Background" Value="Transparent" />
+                                    <Setter Property="FontFamily" Value="{DynamicResource UiFontFamily}" />
+                                    <Setter Property="FontSize" Value="10.5" />
+                                    <Setter Property="FontWeight" Value="Bold" />
+                                    <Setter Property="Padding" Value="10,4" />
+                                    <Setter Property="Template">
+                                        <Setter.Value>
+                                            <ControlTemplate TargetType="{x:Type RadioButton}">
+                                                <Border x:Name="Pill"
+                                                        Background="{TemplateBinding Background}"
+                                                        CornerRadius="4"
+                                                        Padding="{TemplateBinding Padding}">
+                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                </Border>
+                                                <ControlTemplate.Triggers>
+                                                    <Trigger Property="IsChecked" Value="True">
+                                                        <Setter TargetName="Pill" Property="Background" Value="#FFFFFF" />
+                                                        <Setter Property="Foreground" Value="#000000" />
+                                                    </Trigger>
+                                                </ControlTemplate.Triggers>
+                                            </ControlTemplate>
+                                        </Setter.Value>
+                                    </Setter>
+                                </Style>
+                            </RadioButton.Style>
+                        </RadioButton>
+                    </StackPanel>
+                </Border>
+            </StackPanel>
 
-                        <TextBlock Text="YENİ KOMUT:" Style="{DynamicResource MicroCapTextStyle}" FontSize="11" VerticalAlignment="Center" Margin="4,0,4,0" />
-                        <ComboBox ItemsSource="{Binding AvailableMissionCommands}"
-                                  SelectedItem="{Binding SelectedNewMissionCommand}"
-                                  Style="{DynamicResource SpaceXComboBoxStyle}"
-                                  Width="165"
-                                  Height="28"
-                                  FontSize="11"
-                                  Margin="0,2,6,2">
-                            <ComboBox.ItemTemplate>
-                                <DataTemplate>
-                                    <TextBlock Text="{Binding Converter={StaticResource EnumDisplayConverter}}" />
-                                </DataTemplate>
-                            </ComboBox.ItemTemplate>
-                        </ComboBox>
+            <!-- Compact Left Action Strip (5 Core Controls + Tools Popup) -->
+            <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                <ToggleButton Content="HARİTADAN EKLE"
+                              IsChecked="{Binding IsMissionMapPickActive, Mode=OneWay}"
+                              Command="{Binding ToggleMissionMapEditCommand}"
+                              Margin="0,2,8,2"
+                              Padding="13,5"
+                              FontSize="11"
+                              FontWeight="Bold"
+                              Cursor="Hand">
+                    <ToggleButton.Style>
+                        <Style TargetType="{x:Type ToggleButton}">
+                            <Setter Property="Background" Value="#000000" />
+                            <Setter Property="Foreground" Value="#FFFFFF" />
+                            <Setter Property="BorderBrush" Value="#FFFFFF" />
+                            <Setter Property="BorderThickness" Value="1" />
+                            <Setter Property="MinHeight" Value="30" />
+                            <Setter Property="Template">
+                                <Setter.Value>
+                                    <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                        <Border x:Name="BtnBorder"
+                                                Background="{TemplateBinding Background}"
+                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                CornerRadius="6"
+                                                Padding="{TemplateBinding Padding}">
+                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                        </Border>
+                                        <ControlTemplate.Triggers>
+                                            <Trigger Property="IsChecked" Value="True">
+                                                <Setter TargetName="BtnBorder" Property="Background" Value="#FFFFFF" />
+                                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="#FFFFFF" />
+                                                <Setter Property="Foreground" Value="#000000" />
+                                            </Trigger>
+                                        </ControlTemplate.Triggers>
+                                    </ControlTemplate>
+                                </Setter.Value>
+                            </Setter>
+                        </Style>
+                    </ToggleButton.Style>
+                </ToggleButton>
 
-                        <TextBlock Text="REF:" Style="{DynamicResource MicroCapTextStyle}" FontSize="11" VerticalAlignment="Center" Margin="2,0,4,0" />
-                        <ComboBox ItemsSource="{x:Static svc:EditableMissionItem.ReferenceFrameOptions}"
-                                  SelectedItem="{Binding DefaultMissionFrameLabel}"
-                                  Style="{DynamicResource SpaceXComboBoxStyle}"
-                                  Width="72"
-                                  Height="28"
-                                  FontSize="11"
-                                  Margin="0,2,6,2" />
+                <Button Content="+ WP EKLE" Command="{Binding AddManualWaypointCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="11,4" FontSize="11" Margin="0,2,6,2" />
+                <Button Content="ARACA YÜKLE" Command="{Binding UploadMissionCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="11,4" FontSize="11" Margin="0,2,6,2" />
+                <Button Content="▶ BAŞLAT" ToolTip="Otonom görevi başlat (AUTO + Mission Start)" Command="{Binding RequestStartMissionCommand}" Style="{DynamicResource GhostPillButtonStyle}" BorderBrush="#34C759" Foreground="#34C759" Padding="11,4" FontSize="11" FontWeight="Bold" Margin="0,2,6,2" />
+                <Button Content="⏸ DURDUR" ToolTip="Görevi durdur ve mevcut konumda bekle (HOLD / LOITER)" Command="{Binding RequestHoldCommand}" Style="{DynamicResource GhostPillButtonStyle}" BorderBrush="#FF9F0A" Foreground="#FF9F0A" Padding="11,4" FontSize="11" FontWeight="Bold" Margin="0,2,6,2" />
 
-                        <TextBlock Text="ALT(M):" Style="{DynamicResource MicroCapTextStyle}" FontSize="11" VerticalAlignment="Center" Margin="2,0,4,0" />
-                        <TextBox Text="{Binding DefaultWaypointAltitudeMeters, UpdateSourceTrigger=PropertyChanged}"
+                <Border Background="#0A0A0D" BorderBrush="#2D2D35" BorderThickness="1" CornerRadius="6" Padding="6,2" Margin="0,2,6,2" VerticalAlignment="Center">
+                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                        <TextBlock Text="HIZ:" Style="{DynamicResource MicroCapTextStyle}" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,4,0" />
+                        <TextBox Text="{Binding CruiseSpeedMps, UpdateSourceTrigger=PropertyChanged}"
                                  Style="{DynamicResource SpaceXTextBoxStyle}"
-                                 Width="54"
-                                 Height="28"
+                                 Width="40"
+                                 Height="24"
+                                 Padding="4,1"
                                  FontSize="11"
-                                 Margin="0,2,8,2" />
+                                 HorizontalContentAlignment="Center"
+                                 Margin="0,0,4,0" />
+                        <TextBlock Text="m/s" Style="{DynamicResource MicroCapTextStyle}" FontSize="9.5" VerticalAlignment="Center" Margin="0,0,5,0" />
+                        <Button Content="UYGULA"
+                                ToolTip="Görev hızını araca gönder (MAV_CMD_DO_CHANGE_SPEED, drone için genelde 1–5 m/s)"
+                                Command="{Binding ApplyCruiseSpeedCommand}"
+                                Style="{DynamicResource GhostPillButtonStyle}"
+                                MinHeight="24"
+                                Padding="8,2"
+                                FontSize="10" />
+                    </StackPanel>
+                </Border>
 
-                        <Button Content="SATIR EKLE" Command="{Binding AddManualWaypointCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="12,4" FontSize="11" Margin="0,2,4,2" />
-                        <Button Content="YUKARI" Command="{Binding MoveWaypointUpCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="10,4" FontSize="11" Margin="0,2,4,2" />
-                        <Button Content="AŞAĞI" Command="{Binding MoveWaypointDownCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="10,4" FontSize="11" Margin="0,2,4,2" />
-                        <Button Content="SİL" Command="{Binding RemoveSelectedMissionWaypointCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="10,4" FontSize="11" Margin="0,2,10,2" />
+                <Button Content="TEMİZLE" Command="{Binding ClearMissionCommand}" Style="{DynamicResource DangerGhostPillButtonStyle}" Padding="11,4" FontSize="11" Margin="0,2,8,2" />
+                <Button x:Name="MissionToolsBtn"
+                        Content="⚙ PLAN ARAÇLARI"
+                        ToolTip="Varsayılan irtifa/komut, Döngü, Hazır Şablonlar, Araçtan Oku, Geri Al ve Dosya İşlemleri"
+                        Click="OnOpenMissionToolsPopupClick"
+                        Style="{DynamicResource GhostPillButtonStyle}"
+                        Padding="11,4"
+                        FontSize="11"
+                        Margin="0,2,0,2" />
+            </WrapPanel>
+        </DockPanel>
 
-                        <Button Content="ARACA YÜKLE" Command="{Binding UploadMissionCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="12,4" FontSize="11" Margin="0,2,4,2" />
-                        <Button Content="ARAÇTAN OKU" Command="{Binding DownloadMissionCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="12,4" FontSize="11" Margin="0,2,4,2" />
-                        <Button Content="TEMİZLE" Command="{Binding ClearMissionCommand}" Style="{DynamicResource DangerGhostPillButtonStyle}" Padding="10,4" FontSize="11" Margin="0,2,10,2" />
-
-                        <Button Content="DOSYADAN AÇ" Click="OnImportMissionClick" Style="{DynamicResource GhostPillButtonStyle}" Padding="12,4" FontSize="11" Margin="0,2,4,2" />
-                        <Button Content="DOSYAYA KAYDET" Click="OnExportMissionClick" Style="{DynamicResource GhostPillButtonStyle}" Padding="12,4" FontSize="11" Margin="0,2,0,2" />
-                    </WrapPanel>
-
-                    <!-- Waypoint DataGrid -->
-                    <DataGrid Grid.Row="1"
-                              ItemsSource="{Binding MissionItems}"
-                              SelectedItem="{Binding SelectedMissionItem}"
-                              Style="{DynamicResource SpaceXDataGridStyle}">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="#" Binding="{Binding Seq}" IsReadOnly="True" Width="42" />
-                            <DataGridTemplateColumn Header="KOMUT" Width="175">
-                                <DataGridTemplateColumn.CellTemplate>
+        <!-- Stage Area: Visual Route Flow (Default) OR Tabular Grid + Elevation Profile + Empty State + Floating Popups -->
+        <Grid x:Name="RouteHostGrid" Grid.Row="1">
+                        <Grid.RowDefinitions>
+                            <RowDefinition Height="*" />
+                            <RowDefinition Height="Auto" />
+                        </Grid.RowDefinitions>
+                        <!-- 1) VISUAL ROUTE FLOW PIPELINE -->
+                        <ScrollViewer x:Name="VisualRouteScroll"
+                                      Grid.Row="0"
+                                      HorizontalScrollBarVisibility="Auto"
+                                      VerticalScrollBarVisibility="Disabled"
+                                      Background="#050507"
+                                      Padding="6,4">
+                            <ItemsControl x:Name="VisualRouteItems"
+                                          ItemsSource="{Binding MissionItems}">
+                                <ItemsControl.ItemsPanel>
+                                    <ItemsPanelTemplate>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center" />
+                                    </ItemsPanelTemplate>
+                                </ItemsControl.ItemsPanel>
+                                <ItemsControl.ItemTemplate>
                                     <DataTemplate>
-                                        <ComboBox ItemsSource="{Binding DataContext.AvailableMissionCommands, ElementName=PlannerRoot}"
-                                                  SelectedItem="{Binding Command, UpdateSourceTrigger=PropertyChanged}"
-                                                  Style="{DynamicResource SpaceXComboBoxStyle}"
-                                                  Height="24"
-                                                  Padding="6,2"
-                                                  FontSize="11">
-                                            <ComboBox.ItemTemplate>
-                                                <DataTemplate>
-                                                    <TextBlock Text="{Binding Converter={StaticResource EnumDisplayConverter}}" />
-                                                </DataTemplate>
-                                            </ComboBox.ItemTemplate>
-                                        </ComboBox>
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTemplateColumn Header="REFERANS (REL/AMSL)" Width="115">
-                                <DataGridTemplateColumn.CellTemplate>
-                                    <DataTemplate>
-                                        <ComboBox ItemsSource="{x:Static svc:EditableMissionItem.ReferenceFrameOptions}"
-                                                  SelectedItem="{Binding ReferenceFrameLabel, UpdateSourceTrigger=PropertyChanged}"
-                                                  Style="{DynamicResource SpaceXComboBoxStyle}"
-                                                  Height="24"
-                                                  Padding="6,2"
-                                                  FontSize="11" />
-                                    </DataTemplate>
-                                </DataGridTemplateColumn.CellTemplate>
-                            </DataGridTemplateColumn>
-                            <DataGridTextColumn Header="ENLEM" Binding="{Binding Latitude, StringFormat=F6, UpdateSourceTrigger=LostFocus}" Width="105" />
-                            <DataGridTextColumn Header="BOYLAM" Binding="{Binding Longitude, StringFormat=F6, UpdateSourceTrigger=LostFocus}" Width="105" />
-                            <DataGridTextColumn Header="İRTİFA (M)" Binding="{Binding Altitude, StringFormat=F1, UpdateSourceTrigger=LostFocus}" Width="80" />
-                            <DataGridTextColumn Header="PARAM 1" Binding="{Binding Param1, StringFormat=F1, UpdateSourceTrigger=LostFocus}" Width="70" />
-                            <DataGridTextColumn Header="PARAM 2" Binding="{Binding Param2, StringFormat=F1, UpdateSourceTrigger=LostFocus}" Width="70" />
-                            <DataGridTextColumn Header="PARAM 3" Binding="{Binding Param3, StringFormat=F1, UpdateSourceTrigger=LostFocus}" Width="70" />
-                            <DataGridTextColumn Header="PARAM 4" Binding="{Binding Param4, StringFormat=F1, UpdateSourceTrigger=LostFocus}" Width="70" />
-                        </DataGrid.Columns>
-                    </DataGrid>
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <!-- Waypoint Node Card -->
+                                            <Border Width="192"
+                                                    Height="104"
+                                                    CornerRadius="8"
+                                                    Padding="10,8"
+                                                    Cursor="Hand"
+                                                    MouseLeftButtonUp="OnWaypointCardClick">
+                                                <Border.Style>
+                                                    <Style TargetType="{x:Type Border}">
+                                                        <Setter Property="Background" Value="#0F0F14" />
+                                                        <Setter Property="BorderBrush" Value="#2D2D35" />
+                                                        <Setter Property="BorderThickness" Value="1" />
+                                                        <Style.Triggers>
+                                                            <Trigger Property="IsMouseOver" Value="True">
+                                                                <Setter Property="Background" Value="#16161D" />
+                                                                <Setter Property="BorderBrush" Value="#6E6E7A" />
+                                                            </Trigger>
+                                                            <DataTrigger Value="True">
+                                                                <DataTrigger.Binding>
+                                                                    <MultiBinding Converter="{StaticResource ReferenceEqualityConverter}">
+                                                                        <Binding />
+                                                                        <Binding Path="DataContext.SelectedMissionItem" ElementName="PlannerRoot" />
+                                                                    </MultiBinding>
+                                                                </DataTrigger.Binding>
+                                                                <Setter Property="Background" Value="#171720" />
+                                                                <Setter Property="BorderBrush" Value="#FFFFFF" />
+                                                                <Setter Property="BorderThickness" Value="1.5" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Border.Style>
+                                                <Grid>
+                                                    <Grid.RowDefinitions>
+                                                        <RowDefinition Height="Auto" />
+                                                        <RowDefinition Height="*" />
+                                                        <RowDefinition Height="Auto" />
+                                                    </Grid.RowDefinitions>
 
-                    <!-- Transfer Status Bar -->
-                    <Grid Grid.Row="2" Margin="0,6,0,0">
+                                                    <!-- Card Header: #Seq + Command Badge + Quick Delete -->
+                                                    <DockPanel Grid.Row="0" LastChildFill="True">
+                                                        <Button DockPanel.Dock="Right"
+                                                                Content="✕"
+                                                                ToolTip="Bu noktayı sil"
+                                                                Click="OnCardDeleteClick"
+                                                                Background="Transparent"
+                                                                BorderThickness="0"
+                                                                Foreground="#6E6E78"
+                                                                FontSize="11"
+                                                                Padding="4,0"
+                                                                Cursor="Hand"
+                                                                VerticalAlignment="Center" />
+
+                                                        <Border DockPanel.Dock="Left"
+                                                                Background="{Binding CommandAccentHex}"
+                                                                CornerRadius="4"
+                                                                Padding="6,2"
+                                                                Margin="0,0,7,0"
+                                                                VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding Seq, StringFormat=#{0}}"
+                                                                       FontFamily="{DynamicResource DisplayFontFamily}"
+                                                                       FontSize="10.5"
+                                                                       FontWeight="Bold"
+                                                                       Foreground="#000000" />
+                                                        </Border>
+
+                                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                            <TextBlock Text="{Binding CommandBadgeGlyph}"
+                                                                       FontSize="12"
+                                                                       Foreground="{Binding CommandAccentHex}"
+                                                                       VerticalAlignment="Center"
+                                                                       Margin="0,0,5,0" />
+                                                            <TextBlock Text="{Binding CommandShortLabel}"
+                                                                       FontFamily="{DynamicResource DisplayFontFamily}"
+                                                                       FontSize="11"
+                                                                       FontWeight="Bold"
+                                                                       Foreground="#FFFFFF"
+                                                                       TextTrimming="CharacterEllipsis"
+                                                                       VerticalAlignment="Center" />
+                                                        </StackPanel>
+                                                    </DockPanel>
+
+                                                    <!-- Hero Metric: Altitude / Target Speed -->
+                                                    <StackPanel Grid.Row="1" VerticalAlignment="Center" Margin="0,4,0,2">
+                                                        <TextBlock Text="{Binding AltitudeDisplay}"
+                                                                   FontFamily="{DynamicResource DisplayFontFamily}"
+                                                                   FontSize="20"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="#FFFFFF" />
+                                                        <TextBlock Text="{Binding CoordsShortDisplay}"
+                                                                   FontFamily="{DynamicResource UiFontFamily}"
+                                                                   FontSize="10.5"
+                                                                   Foreground="#8E8E98"
+                                                                   Margin="0,1,0,0" />
+                                                    </StackPanel>
+
+                                                    <!-- Card Footer: Param Summary + Settings Cue -->
+                                                    <DockPanel Grid.Row="2" LastChildFill="True">
+                                                        <TextBlock DockPanel.Dock="Right"
+                                                                   Text="AYAR ⚙"
+                                                                   FontFamily="{DynamicResource DisplayFontFamily}"
+                                                                   FontSize="9.5"
+                                                                   Foreground="#7A7A86"
+                                                                   VerticalAlignment="Center" />
+                                                        <TextBlock Text="{Binding ParamSummaryDisplay}"
+                                                                   FontFamily="{DynamicResource UiFontFamily}"
+                                                                   FontSize="10"
+                                                                   FontWeight="Bold"
+                                                                   Foreground="#A6A6B4"
+                                                                   TextTrimming="CharacterEllipsis"
+                                                                   VerticalAlignment="Center" />
+                                                    </DockPanel>
+                                                </Grid>
+                                            </Border>
+
+                                            <!-- Aerospace Route Leg Connector with Live Leg Distance -->
+                                            <StackPanel Orientation="Vertical" VerticalAlignment="Center" Margin="2,0">
+                                                <TextBlock Text="{Binding LegDistanceDisplay}"
+                                                           Visibility="{Binding HasLegDistance, Converter={StaticResource BoolToVis}}"
+                                                           FontFamily="{DynamicResource DisplayFontFamily}"
+                                                           FontSize="9.5"
+                                                           Foreground="#8E8E98"
+                                                           HorizontalAlignment="Center"
+                                                           Margin="0,0,0,2" />
+                                                <StackPanel Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+                                                    <Border Width="18" Height="1.5" Background="#3A3A44" VerticalAlignment="Center" />
+                                                    <TextBlock Text="▸" FontSize="11" Foreground="#666674" VerticalAlignment="Center" Margin="-1,-1,0,0" />
+                                                </StackPanel>
+                                            </StackPanel>
+                                        </StackPanel>
+                                    </DataTemplate>
+                                </ItemsControl.ItemTemplate>
+                            </ItemsControl>
+                        </ScrollViewer>
+
+                        <!-- 2) POWER-USER TABULAR VIEW (OPTIONAL) -->
+                        <DataGrid x:Name="WaypointDataGrid"
+                                  Grid.Row="0"
+                                  Visibility="Collapsed"
+                                  ItemsSource="{Binding MissionItems}"
+                                  SelectedItem="{Binding SelectedMissionItem}"
+                                  Style="{DynamicResource SpaceXDataGridStyle}">
+                            <DataGrid.Columns>
+                                <DataGridTextColumn Header="#" Binding="{Binding Seq}" IsReadOnly="True" Width="42" />
+                                <DataGridTemplateColumn Header="KOMUT" Width="175">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox ItemsSource="{Binding DataContext.AvailableMissionCommands, ElementName=PlannerRoot}"
+                                                      SelectedItem="{Binding Command, UpdateSourceTrigger=PropertyChanged}"
+                                                      Style="{DynamicResource SpaceXComboBoxStyle}"
+                                                      MinHeight="26"
+                                                      Height="26"
+                                                      Padding="6,1"
+                                                      FontSize="11.5">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Converter={StaticResource EnumDisplayConverter}}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTemplateColumn Header="REFERANS" Width="115">
+                                    <DataGridTemplateColumn.CellTemplate>
+                                        <DataTemplate>
+                                            <ComboBox ItemsSource="{x:Static svc:EditableMissionItem.ReferenceFrameOptions}"
+                                                      SelectedItem="{Binding ReferenceFrameLabel, UpdateSourceTrigger=PropertyChanged}"
+                                                      Style="{DynamicResource SpaceXComboBoxStyle}"
+                                                      MinHeight="26"
+                                                      Height="26"
+                                                      Padding="6,1"
+                                                      FontSize="11.5" />
+                                        </DataTemplate>
+                                    </DataGridTemplateColumn.CellTemplate>
+                                </DataGridTemplateColumn>
+                                <DataGridTextColumn Header="ENLEM" Binding="{Binding Latitude, StringFormat=F6, UpdateSourceTrigger=LostFocus}" Width="105" />
+                                <DataGridTextColumn Header="BOYLAM" Binding="{Binding Longitude, StringFormat=F6, UpdateSourceTrigger=LostFocus}" Width="105" />
+                                <DataGridTextColumn Header="İRTİFA (M)" Binding="{Binding Altitude, StringFormat=F1, UpdateSourceTrigger=LostFocus}" Width="80" />
+                                <DataGridTextColumn Header="PARAM 1" Binding="{Binding Param1, StringFormat=F1, UpdateSourceTrigger=LostFocus}" Width="70" />
+                                <DataGridTextColumn Header="PARAM 2" Binding="{Binding Param2, StringFormat=F1, UpdateSourceTrigger=LostFocus}" Width="70" />
+                                <DataGridTextColumn Header="PARAM 3" Binding="{Binding Param3, StringFormat=F1, UpdateSourceTrigger=LostFocus}" Width="70" />
+                                <DataGridTextColumn Header="PARAM 4" Binding="{Binding Param4, StringFormat=F1, UpdateSourceTrigger=LostFocus}" Width="70" />
+                            </DataGrid.Columns>
+                        </DataGrid>
+
+                        <!-- EMPTY STATE -->
+                        <StackPanel Grid.Row="0"
+                                    VerticalAlignment="Center"
+                                    HorizontalAlignment="Center"
+                                    IsHitTestVisible="False">
+                            <StackPanel.Style>
+                                <Style TargetType="{x:Type StackPanel}">
+                                    <Setter Property="Visibility" Value="Collapsed" />
+                                    <Style.Triggers>
+                                        <DataTrigger Binding="{Binding MissionItems.Count}" Value="0">
+                                            <Setter Property="Visibility" Value="Visible" />
+                                        </DataTrigger>
+                                    </Style.Triggers>
+                                </Style>
+                            </StackPanel.Style>
+                            <TextBlock Text="GÖREV ROTASI HENÜZ BOŞ"
+                                       FontFamily="{DynamicResource DisplayFontFamily}"
+                                       FontSize="12.5"
+                                       FontWeight="Bold"
+                                       Foreground="#8E8E98"
+                                       HorizontalAlignment="Center" />
+                            <TextBlock Text="'HARİTADAN EKLE'ye tıklayıp haritadan nokta seçin veya '+ WP EKLE' ile görsel kart oluşturun. Kartlara veya harita pinlerine tıklayınca ayar popup'ı açılır."
+                                       FontFamily="{DynamicResource UiFontFamily}"
+                                       FontSize="11.5"
+                                       Foreground="#5F5F6A"
+                                       HorizontalAlignment="Center"
+                                       Margin="0,5,0,0" />
+                        </StackPanel>
+
+                        <!-- FLOATING WAYPOINT SETTINGS POPUP -->
+                        <Popup x:Name="WaypointSettingsPopup"
+                               StaysOpen="False"
+                               AllowsTransparency="True"
+                               Placement="Top"
+                               VerticalOffset="-10"
+                               PopupAnimation="Fade">
+                            <Border x:Name="PopupCardBorder"
+                                    DataContext="{Binding SelectedMissionItem}"
+                                    Width="448"
+                                    Background="#0D0D12"
+                                    BorderBrush="#4A4A56"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="14,12">
+                                <Grid>
+                                    <Grid.RowDefinitions>
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                        <RowDefinition Height="Auto" />
+                                    </Grid.RowDefinitions>
+
+                                    <!-- Popup Header -->
+                                    <DockPanel Grid.Row="0" Margin="0,0,0,10" LastChildFill="True">
+                                        <StackPanel DockPanel.Dock="Right" Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Button Content="◀"
+                                                    ToolTip="Rotada 1 sıra öne al"
+                                                    Command="{Binding DataContext.MoveWaypointUpCommand, ElementName=PlannerRoot}"
+                                                    Style="{DynamicResource GhostPillButtonStyle}"
+                                                    MinHeight="24"
+                                                    Padding="8,2"
+                                                    FontSize="10"
+                                                    Margin="0,0,4,0" />
+                                            <Button Content="▶"
+                                                    ToolTip="Rotada 1 sıra arkaya al"
+                                                    Command="{Binding DataContext.MoveWaypointDownCommand, ElementName=PlannerRoot}"
+                                                    Style="{DynamicResource GhostPillButtonStyle}"
+                                                    MinHeight="24"
+                                                    Padding="8,2"
+                                                    FontSize="10"
+                                                    Margin="0,0,6,0" />
+                                            <Button Content="SİL"
+                                                    Click="OnPopupDeleteClick"
+                                                    Style="{DynamicResource DangerGhostPillButtonStyle}"
+                                                    MinHeight="24"
+                                                    Padding="8,2"
+                                                    FontSize="10"
+                                                    Margin="0,0,6,0" />
+                                            <Button Content="✕"
+                                                    Click="OnClosePopupClick"
+                                                    Style="{DynamicResource GhostPillButtonStyle}"
+                                                    MinHeight="24"
+                                                    Padding="8,2"
+                                                    FontSize="10" />
+                                        </StackPanel>
+
+                                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                            <Border Background="{Binding CommandAccentHex}"
+                                                    CornerRadius="4"
+                                                    Padding="7,2"
+                                                    Margin="0,0,8,0">
+                                                <TextBlock Text="{Binding Seq, StringFormat=WP #{0}}"
+                                                           FontFamily="{DynamicResource DisplayFontFamily}"
+                                                           FontSize="11"
+                                                           FontWeight="Bold"
+                                                           Foreground="#000000" />
+                                            </Border>
+                                            <TextBlock Text="{Binding CommandBadgeGlyph}"
+                                                       FontSize="13"
+                                                       Foreground="{Binding CommandAccentHex}"
+                                                       VerticalAlignment="Center"
+                                                       Margin="0,0,5,0" />
+                                            <TextBlock Text="{Binding CommandShortLabel}"
+                                                       FontFamily="{DynamicResource DisplayFontFamily}"
+                                                       FontSize="13"
+                                                       FontWeight="Bold"
+                                                       Foreground="#FFFFFF"
+                                                       VerticalAlignment="Center" />
+                                        </StackPanel>
+                                    </DockPanel>
+
+                                    <!-- Row 1: Command & Frame -->
+                                    <Grid Grid.Row="1" Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="12" />
+                                            <ColumnDefinition Width="118" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="GÖREV KOMUTU" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <ComboBox ItemsSource="{Binding DataContext.AvailableMissionCommands, ElementName=PlannerRoot}"
+                                                      SelectedItem="{Binding Command, UpdateSourceTrigger=PropertyChanged}"
+                                                      Style="{DynamicResource SpaceXComboBoxStyle}"
+                                                      Height="30"
+                                                      Padding="8,2"
+                                                      FontSize="12">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Converter={StaticResource EnumDisplayConverter}}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="REFERANS" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <ComboBox ItemsSource="{x:Static svc:EditableMissionItem.ReferenceFrameOptions}"
+                                                      SelectedItem="{Binding ReferenceFrameLabel, UpdateSourceTrigger=PropertyChanged}"
+                                                      Style="{DynamicResource SpaceXComboBoxStyle}"
+                                                      Height="30"
+                                                      Padding="8,2"
+                                                      FontSize="12" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Row 2: Latitude, Longitude, Altitude -->
+                                    <Grid Grid.Row="2" Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="105" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="ENLEM (LAT)" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox Text="{Binding Latitude, StringFormat=F6, UpdateSourceTrigger=LostFocus}"
+                                                     Style="{DynamicResource SpaceXTextBoxStyle}"
+                                                     Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="BOYLAM (LON)" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox Text="{Binding Longitude, StringFormat=F6, UpdateSourceTrigger=LostFocus}"
+                                                     Style="{DynamicResource SpaceXTextBoxStyle}"
+                                                     Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="4">
+                                            <TextBlock Text="İRTİFA (M)" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox Text="{Binding Altitude, StringFormat=F1, UpdateSourceTrigger=LostFocus}"
+                                                     Style="{DynamicResource SpaceXTextBoxStyle}"
+                                                     Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Row 3: Contextual Command Parameters -->
+                                    <Grid Grid.Row="3" Margin="0,0,0,10">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="8" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <StackPanel Grid.Row="0" Grid.Column="0">
+                                            <TextBlock Text="{Binding Param1Label}" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox Text="{Binding Param1, StringFormat=F1, UpdateSourceTrigger=LostFocus}"
+                                                     Style="{DynamicResource SpaceXTextBoxStyle}"
+                                                     Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="2">
+                                            <TextBlock Text="{Binding Param2Label}" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox Text="{Binding Param2, StringFormat=F1, UpdateSourceTrigger=LostFocus}"
+                                                     Style="{DynamicResource SpaceXTextBoxStyle}"
+                                                     Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.Column="0">
+                                            <TextBlock Text="{Binding Param3Label}" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox Text="{Binding Param3, StringFormat=F1, UpdateSourceTrigger=LostFocus}"
+                                                     Style="{DynamicResource SpaceXTextBoxStyle}"
+                                                     Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.Column="2">
+                                            <TextBlock Text="{Binding Param4Label}" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox Text="{Binding Param4, StringFormat=F1, UpdateSourceTrigger=LostFocus}"
+                                                     Style="{DynamicResource SpaceXTextBoxStyle}"
+                                                     Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <!-- Row 4: Autocontinue + Done -->
+                                    <DockPanel Grid.Row="4" LastChildFill="False">
+                                        <CheckBox DockPanel.Dock="Left"
+                                                  IsChecked="{Binding Autocontinue}"
+                                                  Content="OTOMATİK DEVAM (AUTOCONTINUE)"
+                                                  Foreground="#D0D0DA"
+                                                  FontFamily="{DynamicResource UiFontFamily}"
+                                                  FontSize="11"
+                                                  VerticalAlignment="Center" />
+                                        <Button DockPanel.Dock="Right"
+                                                Content="TAMAM"
+                                                Click="OnClosePopupClick"
+                                                Style="{DynamicResource GhostPillButtonStyle}"
+                                                MinHeight="28"
+                                                Padding="16,4"
+                                                FontSize="11" />
+                                    </DockPanel>
+                                </Grid>
+                            </Border>
+                        </Popup>
+
+                        <!-- MISSION TOOLS & DEFAULTS POPUP (⚙ PLAN ARAÇLARI / AYARLAR) -->
+                        <Popup x:Name="MissionToolsPopup"
+                               PlacementTarget="{Binding ElementName=MissionToolsBtn}"
+                               Placement="Top"
+                               VerticalOffset="-8"
+                               StaysOpen="False"
+                               AllowsTransparency="True"
+                               PopupAnimation="Fade">
+                            <Border Width="430"
+                                    Background="#0D0D12"
+                                    BorderBrush="#4A4A56"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="16,14">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,10">
+                                        <Button DockPanel.Dock="Right"
+                                                Content="✕"
+                                                Click="OnCloseAuxiliaryPopupsClick"
+                                                Style="{DynamicResource GhostPillButtonStyle}"
+                                                MinHeight="24"
+                                                Padding="8,2"
+                                                FontSize="10" />
+                                        <TextBlock Text="⚙ GÖREV ARAÇLARI &amp; VARSAYILANLAR"
+                                                   FontFamily="{DynamicResource DisplayFontFamily}"
+                                                   FontSize="12"
+                                                   FontWeight="Bold"
+                                                   Foreground="#FFFFFF"
+                                                   VerticalAlignment="Center" />
+                                    </DockPanel>
+
+                                    <Grid Margin="0,0,0,12">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="1.5*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="0.8*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="0.9*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="VARSAYILAN KOMUT" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,4" />
+                                            <ComboBox ItemsSource="{Binding AvailableMissionCommands}"
+                                                      SelectedItem="{Binding SelectedNewMissionCommand}"
+                                                      Style="{DynamicResource SpaceXComboBoxStyle}"
+                                                      Height="30"
+                                                      Padding="8,2"
+                                                      FontSize="11.5">
+                                                <ComboBox.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <TextBlock Text="{Binding Converter={StaticResource EnumDisplayConverter}}" />
+                                                    </DataTemplate>
+                                                </ComboBox.ItemTemplate>
+                                            </ComboBox>
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="REFERANS" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,4" />
+                                            <ComboBox ItemsSource="{x:Static svc:EditableMissionItem.ReferenceFrameOptions}"
+                                                      SelectedItem="{Binding DefaultMissionFrameLabel}"
+                                                      Style="{DynamicResource SpaceXComboBoxStyle}"
+                                                      Height="30"
+                                                      Padding="8,2"
+                                                      FontSize="11.5" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="4">
+                                            <TextBlock Text="İRTİFA (M)" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,4" />
+                                            <TextBox Text="{Binding DefaultWaypointAltitudeMeters, UpdateSourceTrigger=PropertyChanged}"
+                                                     Style="{DynamicResource SpaceXTextBoxStyle}"
+                                                     Height="30"
+                                                     Padding="8,2"
+                                                     FontSize="11.5" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <UniformGrid Columns="3">
+                                        <Button Content="↶ GERİ AL" ToolTip="Son rota değişikliğini geri al (Ctrl+Z)" Command="{Binding UndoMissionCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="8,6" FontSize="11" Margin="0,0,6,6" />
+                                        <Button Content="↻ DÖNGÜ BAĞLA" Click="OnOpenLoopPopupClick" Style="{DynamicResource GhostPillButtonStyle}" Padding="8,6" FontSize="11" Margin="0,0,6,6" />
+                                        <Button Content="◈ ŞABLONLAR" Click="OnOpenTemplatesPopupClick" Style="{DynamicResource GhostPillButtonStyle}" Padding="8,6" FontSize="11" Margin="0,0,0,6" />
+                                        <Button Content="⬇ ARAÇTAN OKU" Command="{Binding DownloadMissionCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="8,6" FontSize="11" Margin="0,0,6,0" />
+                                        <Button Content="📂 DOSYADAN AÇ" Click="OnImportMissionClick" Style="{DynamicResource GhostPillButtonStyle}" Padding="8,6" FontSize="11" Margin="0,0,6,0" />
+                                        <Button Content="💾 DOSYAYA KAYDET" Click="OnExportMissionClick" Style="{DynamicResource GhostPillButtonStyle}" Padding="8,6" FontSize="11" Margin="0,0,0,0" />
+                                    </UniformGrid>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+
+                        <!-- MISSION LOOP CONNECTION POPUP (SON WP -> TARGET WP) -->
+                        <Popup x:Name="LoopMissionPopup"
+                               PlacementTarget="{Binding ElementName=MissionToolsBtn}"
+                               Placement="Top"
+                               VerticalOffset="-8"
+                               StaysOpen="False"
+                               AllowsTransparency="True"
+                               PopupAnimation="Fade">
+                            <Border Width="340"
+                                    Background="#0D0D12"
+                                    BorderBrush="#4A4A56"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="14,12">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,10">
+                                        <Button DockPanel.Dock="Right"
+                                                Content="✕"
+                                                Click="OnCloseAuxiliaryPopupsClick"
+                                                Style="{DynamicResource GhostPillButtonStyle}"
+                                                MinHeight="24"
+                                                Padding="8,2"
+                                                FontSize="10" />
+                                        <TextBlock Text="↻ SON WAYPOINTİ BAĞLA (DÖNGÜ)"
+                                                   FontFamily="{DynamicResource DisplayFontFamily}"
+                                                   FontSize="12"
+                                                   FontWeight="Bold"
+                                                   Foreground="#38BDF8"
+                                                   VerticalAlignment="Center" />
+                                    </DockPanel>
+
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <StackPanel Grid.Column="0">
+                                            <TextBlock Text="HEDEF WP # (SEQ)" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox x:Name="LoopTargetSeqBox"
+                                                     Text="0"
+                                                     Style="{DynamicResource SpaceXTextBoxStyle}"
+                                                     Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Column="2">
+                                            <TextBlock Text="TEKRAR (-1 = SONSUZ)" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox x:Name="LoopRepeatCountBox"
+                                                     Text="-1"
+                                                     Style="{DynamicResource SpaceXTextStyle}"
+                                                     Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <RadioButton x:Name="LoopUseDoJumpRadio"
+                                                 Content="DO_JUMP ile Döngüye Bağla (Otopilot Tekrarlı)"
+                                                 GroupName="LoopMethod"
+                                                 IsChecked="True"
+                                                 Foreground="#E5E5F0"
+                                                 FontFamily="{DynamicResource UiFontFamily}"
+                                                 FontSize="11.5"
+                                                 Margin="0,2,0,4" />
+                                    <RadioButton x:Name="LoopPhysicalWpRadio"
+                                                 Content="Hedef WP Koordinatına Dönüş Noktası Ekle"
+                                                 GroupName="LoopMethod"
+                                                 Foreground="#E5E5F0"
+                                                 FontFamily="{DynamicResource UiFontFamily}"
+                                                 FontSize="11.5"
+                                                 Margin="0,0,0,10" />
+
+                                    <DockPanel LastChildFill="False">
+                                        <Button DockPanel.Dock="Left"
+                                                Content="HIZLI SON → #0"
+                                                Click="OnQuickLoopZeroClick"
+                                                Style="{DynamicResource GhostPillButtonStyle}"
+                                                MinHeight="28" Padding="10,4" FontSize="10.5" />
+                                        <Button DockPanel.Dock="Right"
+                                                Content="ROTA BAĞLA"
+                                                Click="OnApplyLoopClick"
+                                                Style="{DynamicResource GhostPillButtonStyle}"
+                                                BorderBrush="#38BDF8"
+                                                Foreground="#38BDF8"
+                                                MinHeight="28" Padding="14,4" FontSize="11" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+
+                        <!-- READY MISSION SCHEMATICS / PATTERNS POPUP -->
+                        <Popup x:Name="PatternTemplatePopup"
+                               PlacementTarget="{Binding ElementName=MissionToolsBtn}"
+                               Placement="Top"
+                               VerticalOffset="-8"
+                               StaysOpen="False"
+                               AllowsTransparency="True"
+                               PopupAnimation="Fade">
+                            <Border Width="470"
+                                    Background="#0D0D12"
+                                    BorderBrush="#4A4A56"
+                                    BorderThickness="1"
+                                    CornerRadius="8"
+                                    Padding="14,12">
+                                <StackPanel>
+                                    <DockPanel Margin="0,0,0,10">
+                                        <Button DockPanel.Dock="Right"
+                                                Content="✕"
+                                                Click="OnCloseAuxiliaryPopupsClick"
+                                                Style="{DynamicResource GhostPillButtonStyle}"
+                                                MinHeight="24"
+                                                Padding="8,2"
+                                                FontSize="10" />
+                                        <TextBlock Text="◈ HAZIR GÖREV ŞEMATİKLERİ (OTOMATİK ROTA)"
+                                                   FontFamily="{DynamicResource DisplayFontFamily}"
+                                                   FontSize="12"
+                                                   FontWeight="Bold"
+                                                   Foreground="#FFFFFF"
+                                                   VerticalAlignment="Center" />
+                                    </DockPanel>
+
+                                    <!-- Pattern Selection Grid (2x2) -->
+                                    <UniformGrid Columns="2" Margin="0,0,0,10">
+                                        <RadioButton x:Name="PatternExpandingRadio"
+                                                     GroupName="PatternChoice"
+                                                     IsChecked="True"
+                                                     Checked="OnPatternChoiceChanged"
+                                                     Content="◎ KÜÇÜKTEN BÜYÜĞE SPİRAL"
+                                                     Foreground="#FFFFFF" FontSize="11" FontWeight="Bold"
+                                                     Margin="0,2,6,4" />
+                                        <RadioButton x:Name="PatternShrinkingRadio"
+                                                     GroupName="PatternChoice"
+                                                     Checked="OnPatternChoiceChanged"
+                                                     Content="◉ BÜYÜKTEN KÜÇÜĞE SPİRAL"
+                                                     Foreground="#FFFFFF" FontSize="11" FontWeight="Bold"
+                                                     Margin="0,2,0,4" />
+                                        <RadioButton x:Name="PatternOrbitRadio"
+                                                     GroupName="PatternChoice"
+                                                     Checked="OnPatternChoiceChanged"
+                                                     Content="↻ DAİRESEL YÖRÜNGE (ÇEMBER)"
+                                                     Foreground="#FFFFFF" FontSize="11" FontWeight="Bold"
+                                                     Margin="0,2,6,2" />
+                                        <RadioButton x:Name="PatternAreaScanRadio"
+                                                     GroupName="PatternChoice"
+                                                     Checked="OnPatternChoiceChanged"
+                                                     Content="▤ ALAN TARAMA (İÇİNİ ZİGZAG TARA)"
+                                                     Foreground="#34C759" FontSize="11" FontWeight="Bold"
+                                                     Margin="0,2,0,2" />
+                                    </UniformGrid>
+
+                                    <!-- Numeric Config Grid -->
+                                    <Grid Margin="0,0,0,8">
+                                        <Grid.ColumnDefinitions>
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="*" />
+                                            <ColumnDefinition Width="8" />
+                                            <ColumnDefinition Width="*" />
+                                        </Grid.ColumnDefinitions>
+                                        <Grid.RowDefinitions>
+                                            <RowDefinition Height="Auto" />
+                                            <RowDefinition Height="8" />
+                                            <RowDefinition Height="Auto" />
+                                        </Grid.RowDefinitions>
+
+                                        <StackPanel Grid.Row="0" Grid.Column="0">
+                                            <TextBlock x:Name="PatternParamALabel" Text="BAŞL. YARIÇAP (M)" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox x:Name="PatternParamABox" Text="25" Style="{DynamicResource SpaceXTextBoxStyle}" Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="2">
+                                            <TextBlock x:Name="PatternParamBLabel" Text="BİTİŞ YARIÇAP (M)" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox x:Name="PatternParamBBox" Text="120" Style="{DynamicResource SpaceXTextBoxStyle}" Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="0" Grid.Column="4">
+                                            <TextBlock x:Name="PatternParamCLabel" Text="TUR SAYISI" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox x:Name="PatternParamCBox" Text="3" Style="{DynamicResource SpaceXTextBoxStyle}" Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+
+                                        <StackPanel Grid.Row="2" Grid.Column="0">
+                                            <TextBlock Text="UÇUŞ İRTİFASI (M)" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox x:Name="PatternAltitudeBox" Text="50" Style="{DynamicResource SpaceXTextBoxStyle}" Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.Column="2">
+                                            <TextBlock x:Name="PatternParamDLabel" Text="TUR NOKTA SAYISI" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox x:Name="PatternParamDBox" Text="12" Style="{DynamicResource SpaceXTextBoxStyle}" Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                        <StackPanel Grid.Row="2" Grid.Column="4">
+                                            <TextBlock Text="YÖN / TARAMA AÇISI (°)" Style="{DynamicResource MicroCapTextStyle}" FontSize="10" Margin="0,0,0,3" />
+                                            <TextBox x:Name="PatternAngleBox" Text="0" Style="{DynamicResource SpaceXTextBoxStyle}" Height="30" Padding="8,2" FontSize="12" />
+                                        </StackPanel>
+                                    </Grid>
+
+                                    <CheckBox x:Name="PatternUseFenceCheck"
+                                              Visibility="Collapsed"
+                                              IsChecked="False" />
+                                    <CheckBox x:Name="PatternIncludeTakeoffCheck"
+                                              Content="Başlangıca TAKEOFF ekle"
+                                              Foreground="#D0D0DA" FontSize="11" Margin="0,0,0,4" />
+                                    <CheckBox x:Name="PatternCloseLoopCheck"
+                                              Content="Son waypointi ilk noktaya döngü (DO_JUMP) ile bağla"
+                                              Foreground="#38BDF8" FontSize="11" Margin="0,0,0,10" />
+
+                                    <DockPanel LastChildFill="False">
+                                        <CheckBox x:Name="PatternReplaceCheck"
+                                                  DockPanel.Dock="Left"
+                                                  IsChecked="True"
+                                                  Content="Mevcut rotayı değiştir"
+                                                  Foreground="#9B9BA6" FontSize="11" VerticalAlignment="Center" />
+                                        <Button DockPanel.Dock="Right"
+                                                Content="ROTAYI OLUŞTUR"
+                                                Click="OnGeneratePatternClick"
+                                                Style="{DynamicResource GhostPillButtonStyle}"
+                                                MinHeight="30" Padding="18,5" FontSize="11" />
+                                    </DockPanel>
+                                </StackPanel>
+                            </Border>
+                        </Popup>
+                        <!-- 3) OPTIONAL VERTICAL ELEVATION PROFILE STRIP -->
+                        <Border x:Name="ElevationProfileHost"
+                                Grid.Row="1"
+                                Height="68"
+                                Margin="0,4,0,0"
+                                Visibility="Collapsed">
+                            <local:ElevationProfileControl ProfileLegs="{Binding MissionLegs}"
+                                                           MissionItems="{Binding MissionItems}"
+                                                           SelectedSeq="{Binding SelectedMissionItem.Seq, FallbackValue=-1}" />
+                        </Border>
+                    </Grid>
+
+                    <!-- Transfer Status Bar + Route Metrics -->
+                    <Grid Grid.Row="2" Margin="0,6,0,2" MinHeight="24">
                         <Grid.ColumnDefinitions>
                             <ColumnDefinition Width="*" />
+                            <ColumnDefinition Width="Auto" />
                             <ColumnDefinition Width="180" />
                         </Grid.ColumnDefinitions>
                         <TextBlock Grid.Column="0"
                                    Text="{Binding MissionTransferStatusText}"
                                    Style="{DynamicResource MicroCapTextStyle}"
-                                   FontSize="11"
+                                   FontSize="11.5"
+                                   TextOptions.TextFormattingMode="Display"
                                    VerticalAlignment="Center" />
-                        <ProgressBar Grid.Column="1"
+                        <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="10,0,12,0">
+                            <TextBlock Text="{Binding MissionSyncStateText}"
+                                       FontFamily="{DynamicResource DisplayFontFamily}"
+                                       FontSize="10.5"
+                                       FontWeight="Bold"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,10,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="{x:Type TextBlock}">
+                                        <Setter Property="Foreground" Value="#34C759" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsMissionDirty}" Value="True">
+                                                <Setter Property="Foreground" Value="#FFCC00" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding MissionItems.Count}" Value="0">
+                                                <Setter Property="Foreground" Value="#6E6E78" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+                            <TextBlock Text="{Binding MissionMetricsSummaryText}"
+                                       FontFamily="{DynamicResource DisplayFontFamily}"
+                                       FontSize="11"
+                                       FontWeight="Bold"
+                                       Foreground="#9B9BA6"
+                                       VerticalAlignment="Center" />
+                        </StackPanel>
+                        <ProgressBar Grid.Column="2"
                                      Minimum="0"
                                      Maximum="100"
                                      Value="{Binding MissionTransferProgressPercent, Mode=OneWay}"
                                      Style="{DynamicResource SpaceXProgressBarStyle}"
                                      VerticalAlignment="Center" />
                     </Grid>
-                </Grid>
-            </TabItem>
-
-            <!-- GEOFENCE TAB -->
-            <TabItem Header="GEOFENCE (SINIR ÇOKGENİ)">
-                <Grid Margin="8">
-                    <Grid.RowDefinitions>
-                        <RowDefinition Height="Auto" />
-                        <RowDefinition Height="*" />
-                    </Grid.RowDefinitions>
-
-                    <WrapPanel Grid.Row="0" Margin="0,0,0,6" VerticalAlignment="Center">
-                        <ToggleButton Content="HARİTADAN ÇİZ"
-                                      IsChecked="{Binding IsFenceMapPickActive, Mode=OneWay}"
-                                      Command="{Binding ToggleFenceMapEditCommand}"
-                                      Margin="0,2,6,2"
-                                      Padding="12,5"
-                                      FontSize="11"
-                                      FontWeight="Bold"
-                                      Cursor="Hand">
-                            <ToggleButton.Style>
-                                <Style TargetType="{x:Type ToggleButton}">
-                                    <Setter Property="Background" Value="#000000" />
-                                    <Setter Property="Foreground" Value="#FFFFFF" />
-                                    <Setter Property="BorderBrush" Value="#FFFFFF" />
-                                    <Setter Property="BorderThickness" Value="1" />
-                                    <Setter Property="Template">
-                                        <Setter.Value>
-                                            <ControlTemplate TargetType="{x:Type ToggleButton}">
-                                                <Border x:Name="BtnBorder"
-                                                        Background="{TemplateBinding Background}"
-                                                        BorderBrush="{TemplateBinding BorderBrush}"
-                                                        BorderThickness="{TemplateBinding BorderThickness}"
-                                                        CornerRadius="32"
-                                                        Padding="{TemplateBinding Padding}">
-                                                    <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
-                                                </Border>
-                                                <ControlTemplate.Triggers>
-                                                    <Trigger Property="IsChecked" Value="True">
-                                                        <Setter TargetName="BtnBorder" Property="Background" Value="#FFFFFF" />
-                                                        <Setter TargetName="BtnBorder" Property="BorderBrush" Value="#FFFFFF" />
-                                                        <Setter Property="Foreground" Value="#000000" />
-                                                    </Trigger>
-                                                </ControlTemplate.Triggers>
-                                            </ControlTemplate>
-                                        </Setter.Value>
-                                    </Setter>
-                                </Style>
-                            </ToggleButton.Style>
-                        </ToggleButton>
-
-                        <Button Content="KÖŞE SİL" Command="{Binding RemoveSelectedFencePointCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="12,4" FontSize="11" Margin="0,2,4,2" />
-                        <Button Content="YEREL TEMİZLE" Command="{Binding ClearFencePointsCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="12,4" FontSize="11" Margin="0,2,10,2" />
-                        <Button Content="GEOFENCE YÜKLE" Command="{Binding UploadFenceCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="12,4" FontSize="11" Margin="0,2,4,2" />
-                        <Button Content="GEOFENCE OKU" Command="{Binding DownloadFenceCommand}" Style="{DynamicResource GhostPillButtonStyle}" Padding="12,4" FontSize="11" Margin="0,2,4,2" />
-                        <Button Content="OTOPİLOT TEMİZLE" Command="{Binding ClearFenceCommand}" Style="{DynamicResource DangerGhostPillButtonStyle}" Padding="12,4" FontSize="11" Margin="0,2,10,2" />
-
-                        <TextBlock Text="{Binding GeofenceStatusSummary}"
-                                   FontFamily="{DynamicResource UiFontFamily}"
-                                   FontSize="11"
-                                   FontWeight="Bold"
-                                   VerticalAlignment="Center">
-                            <TextBlock.Style>
-                                <Style TargetType="{x:Type TextBlock}">
-                                    <Setter Property="Foreground" Value="#F0F0FA" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsGeofenceBreached}" Value="True">
-                                            <Setter Property="Foreground" Value="#FF3B30" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </WrapPanel>
-
-                    <DataGrid Grid.Row="1"
-                              ItemsSource="{Binding FencePoints}"
-                              SelectedItem="{Binding SelectedFencePoint}"
-                              Style="{DynamicResource SpaceXDataGridStyle}">
-                        <DataGrid.Columns>
-                            <DataGridTextColumn Header="#" Binding="{Binding Index}" IsReadOnly="True" Width="60" />
-                            <DataGridTextColumn Header="ENLEM" Binding="{Binding Latitude, StringFormat=F6, UpdateSourceTrigger=LostFocus}" Width="160" />
-                            <DataGridTextColumn Header="BOYLAM" Binding="{Binding Longitude, StringFormat=F6, UpdateSourceTrigger=LostFocus}" Width="160" />
-                        </DataGrid.Columns>
-                    </DataGrid>
-                </Grid>
-            </TabItem>
-        </TabControl>
     </Grid>
 </UserControl>

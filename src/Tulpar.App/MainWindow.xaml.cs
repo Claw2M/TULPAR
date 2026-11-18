@@ -5,8 +5,11 @@ using System.Runtime.InteropServices;
 using System.Text.Json;
 using System.Windows;
 using System.Windows.Controls;
+using System.Windows.Controls.Primitives;
+using System.Windows.Input;
 using System.Windows.Interop;
 using System.Windows.Threading;
+using Microsoft.Win32;
 using Tulpar.App.Controls;
 using Tulpar.App.Services;
 using Tulpar.App.ViewModels;
@@ -20,7 +23,6 @@ namespace Tulpar.App;
 /// </summary>
 public partial class MainWindow : Window
 {
-    private const double ResponsiveCollapseBreakpointWidth = 1280.0;
     private const uint SwpNoSize = 0x0001;
     private const uint SwpNoMove = 0x0002;
     private const uint SwpNoActivate = 0x0010;
@@ -32,25 +34,39 @@ public partial class MainWindow : Window
     private HttpClient? _mapHttpClient;
     private MapHttpServer? _mapServer;
     private OfflineRegionDownloader? _regionDownloader;
-    private bool _wasBelowBreakpoint;
+    private CameraPopupWindow? _cameraPopup;
+    private SettingsPopupWindow? _settingsPopup;
+    private readonly List<LogPopupWindow> _logPopups = [];
+    private CancellationTokenSource? _loadCts;
+    private double _savedSidebarWidth = 382.0;
+    private double _savedDrawerHeight = 286.0;
     private bool _isShuttingDown;
+    private bool _isShowingSafetyPopup;
 
     public MainWindow()
     {
         InitializeComponent();
+        WindowChromeHelper.EnableDarkTitleBar(this);
 
         _viewModel = new MainViewModel();
         DataContext = _viewModel;
         _viewModel.PropertyChanged += OnViewModelPropertyChanged;
 
+        VideoFeed.ExpandPopupRequested += OnVideoExpandPopupRequested;
+        VideoFeed.PlaybackStateChanged += OnVideoPlaybackStateChanged;
+
         Loaded += OnWindowLoadedAsync;
         SizeChanged += OnWindowSizeChanged;
+        PreviewKeyDown += OnMainWindowPreviewKeyDown;
+        Closing += (_, _) => _loadCts?.Cancel();
         Closed += OnWindowClosedAsync;
     }
 
     private async void OnWindowLoadedAsync(object sender, RoutedEventArgs e)
     {
-        UpdateResponsiveSidebar(ActualWidth);
+        UpdateResponsiveLayout(ActualWidth, ActualHeight);
+        _loadCts = new CancellationTokenSource();
+        CancellationToken loadToken = _loadCts.Token;
 
         try
         {
@@ -65,9 +81,22 @@ public partial class MainWindow : Window
             _mapServer = new MapHttpServer(_tileCache, _mapHttpClient);
             _regionDownloader = new OfflineRegionDownloader(_tileCache, _mapHttpClient);
 
-            await _mapServer.StartAsync();
+            await _mapServer.StartAsync(loadToken);
+            if (_isShuttingDown || loadToken.IsCancellationRequested)
+            {
+                return;
+            }
+
             await RefreshMapLayerComboAsync(selectLayerId: _viewModel.SelectedMapLayerId);
+            if (_isShuttingDown || loadToken.IsCancellationRequested)
+            {
+                return;
+            }
+
             await MapHost.InitializeAsync(_mapServer.BaseUri);
+        }
+        catch (OperationCanceledException)
+        {
         }
         catch (Exception ex)
         {
@@ -77,32 +106,127 @@ public partial class MainWindow : Window
         BringPipHwndToTop();
     }
 
-    private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
+    private async void ShowPendingSafetyPopup()
     {
-        UpdateResponsiveSidebar(e.NewSize.Width);
-        BringPipHwndToTop();
-    }
-
-    private void UpdateResponsiveSidebar(double width)
-    {
-        if (width <= 0)
+        if (_isShuttingDown || _isShowingSafetyPopup || _viewModel.PendingSafetyAction is not { } request)
         {
             return;
         }
 
-        bool isBelow = width < ResponsiveCollapseBreakpointWidth;
-        if (isBelow != _wasBelowBreakpoint)
+        _isShowingSafetyPopup = true;
+        try
         {
-            _wasBelowBreakpoint = isBelow;
-            _viewModel.IsLeftPanelVisible = !isBelow;
+            var popup = new SafetyConfirmPopupWindow(
+                request,
+                _viewModel.Snapshot.ModeName,
+                _viewModel.IsArmed)
+            {
+                Owner = this
+            };
+
+            bool confirmed = popup.ShowDialog() == true;
+            if (confirmed)
+            {
+                await _viewModel.ConfirmSafetyActionCommand.ExecuteAsync();
+            }
+            else
+            {
+                _viewModel.CancelSafetyAction();
+            }
+        }
+        finally
+        {
+            _isShowingSafetyPopup = false;
+        }
+    }
+
+    private void OnWindowSizeChanged(object sender, SizeChangedEventArgs e)
+    {
+        UpdateResponsiveLayout(e.NewSize.Width, e.NewSize.Height);
+        BringPipHwndToTop();
+    }
+
+    private void UpdateResponsiveLayout(double width, double height)
+    {
+        if (width <= 0 || height <= 0)
+        {
+            return;
+        }
+
+        _viewModel.ApplyViewportSize(width, height);
+
+        RightDockColumn.Width = new GridLength(_viewModel.RightDockWidth);
+        StageCameraRow.Height = new GridLength(_viewModel.RightCameraHeight);
+        if (_viewModel.IsMissionDrawerExpanded)
+        {
+            MissionDrawerRow.Height = new GridLength(_viewModel.ResolveExpandedMissionDrawerHeight(_savedDrawerHeight));
         }
     }
 
     private void OnViewModelPropertyChanged(object? sender, PropertyChangedEventArgs e)
     {
-        if (e.PropertyName == nameof(MainViewModel.IsCameraPrimary))
+        if (e.PropertyName == nameof(MainViewModel.PendingSafetyAction))
+        {
+            if (_viewModel.PendingSafetyAction is not null && !_isShuttingDown)
+            {
+                Dispatcher.BeginInvoke(DispatcherPriority.Normal, new Action(ShowPendingSafetyPopup));
+            }
+        }
+        else if (e.PropertyName == nameof(MainViewModel.IsCameraPrimary))
         {
             Dispatcher.BeginInvoke(DispatcherPriority.Loaded, new Action(BringPipHwndToTop));
+        }
+        else if (e.PropertyName == nameof(MainViewModel.IsLeftPanelVisible))
+        {
+            if (_viewModel.IsLeftPanelVisible)
+            {
+                LeftSidebarColumn.Width = new GridLength(Math.Max(330.0, _savedSidebarWidth));
+            }
+            else
+            {
+                if (LeftSidebarColumn.ActualWidth >= 300.0)
+                {
+                    _savedSidebarWidth = LeftSidebarColumn.ActualWidth;
+                }
+                LeftSidebarColumn.Width = GridLength.Auto;
+            }
+        }
+        else if (e.PropertyName == nameof(MainViewModel.IsMissionDrawerExpanded))
+        {
+            if (_viewModel.IsMissionDrawerExpanded)
+            {
+                MissionDrawerRow.Height = new GridLength(_viewModel.ResolveExpandedMissionDrawerHeight(_savedDrawerHeight));
+            }
+            else
+            {
+                if (MissionDrawerRow.ActualHeight >= 150.0 && _viewModel.IsDesktopLayout)
+                {
+                    _savedDrawerHeight = MissionDrawerRow.ActualHeight;
+                }
+                MissionDrawerRow.Height = GridLength.Auto;
+            }
+        }
+    }
+
+    private void OnMainWindowPreviewKeyDown(object sender, KeyEventArgs e)
+    {
+        if (e.Key == Key.Escape)
+        {
+            if (_viewModel.ActiveMapEditMode != MapEditMode.None)
+            {
+                _viewModel.ActiveMapEditMode = MapEditMode.None;
+                e.Handled = true;
+            }
+            return;
+        }
+
+        if (Keyboard.Modifiers == ModifierKeys.Control && e.Key == Key.Z)
+        {
+            if (Keyboard.FocusedElement is not TextBox && _viewModel.UndoMissionCommand.CanExecute(null))
+            {
+                _viewModel.UndoMissionCommand.Execute(null);
+                e.Handled = true;
+            }
         }
     }
 
@@ -175,12 +299,39 @@ public partial class MainWindow : Window
         }
     }
 
-    private void OnCenterOnVehicleClick(object sender, RoutedEventArgs e)
+    private void OnSerialPortsDropDownOpened(object? sender, EventArgs e)
     {
-        MapHost.CenterOnVehicle();
+        _viewModel.RefreshSerialPorts();
     }
 
-    private void OnOpenOfflineMapDialogClick(object sender, RoutedEventArgs e)
+    private void OnFlightModeComboSelectionChanged(object sender, SelectionChangedEventArgs e)
+    {
+        if (sender is ComboBox combo &&
+            (combo.IsDropDownOpen || combo.IsKeyboardFocusWithin) &&
+            e.AddedItems.Count > 0 &&
+            _viewModel.ApplySelectedModeCommand.CanExecute(null))
+        {
+            _viewModel.ApplySelectedModeCommand.Execute(null);
+        }
+    }
+
+    private void OnOpenSettingsPopupClick(object sender, RoutedEventArgs e)
+    {
+        if (_settingsPopup is not null)
+        {
+            _settingsPopup.Activate();
+            return;
+        }
+
+        _settingsPopup = new SettingsPopupWindow(_viewModel, OpenOfflineMapDialog)
+        {
+            Owner = this
+        };
+        _settingsPopup.Closed += (_, _) => _settingsPopup = null;
+        _settingsPopup.Show();
+    }
+
+    private void OpenOfflineMapDialog()
     {
         if (_mapServer is null || _regionDownloader is null)
         {
@@ -203,10 +354,66 @@ public partial class MainWindow : Window
                 _viewModel.AppendSystemLog(Core.Mavlink.MavSeverity.Info, "HARİTA", "Haritada sol tuşla sürükleyerek çevrimdışı indirme dikdörtgenini seçin.");
             })
         {
-            Owner = this
+            Owner = (Window?)_settingsPopup ?? this
         };
 
         dialog.ShowDialog();
+    }
+
+    private void OnVideoExpandPopupRequested(VideoFeedControl feed)
+    {
+        if (_cameraPopup is not null)
+        {
+            _cameraPopup.Activate();
+            return;
+        }
+
+        _cameraPopup = new CameraPopupWindow(feed)
+        {
+            Owner = this
+        };
+        _cameraPopup.Closed += (_, _) => _cameraPopup = null;
+        _cameraPopup.Show();
+    }
+
+    private void OnVideoPlaybackStateChanged(bool isPlaying, string statusText, string subtitle)
+    {
+        _cameraPopup?.RefreshVideoState(isPlaying, statusText, subtitle);
+    }
+
+    private void OnOpenLogPopupClick(object sender, RoutedEventArgs e)
+    {
+        var popup = new LogPopupWindow(_viewModel)
+        {
+            Owner = this
+        };
+        _logPopups.Add(popup);
+        popup.Closed += (_, _) => _logPopups.Remove(popup);
+        popup.Show();
+    }
+
+    private async void OnOpenReplayFileClick(object sender, RoutedEventArgs e)
+    {
+        var dialog = new OpenFileDialog
+        {
+            Title = "Telemetri Kaydı (.tlog) Aç",
+            Filter = "MAVLink Telemetri Kaydı (*.tlog)|*.tlog|Tüm Dosyalar (*.*)|*.*"
+        };
+
+        if (dialog.ShowDialog(this) != true)
+        {
+            return;
+        }
+
+        await _viewModel.LoadReplayFileAsync(dialog.FileName);
+    }
+
+    private async void OnReplaySliderDragCompleted(object sender, DragCompletedEventArgs e)
+    {
+        if (sender is Slider slider)
+        {
+            await _viewModel.SeekReplayAsync(slider.Value);
+        }
     }
 
     private async void OnWindowClosedAsync(object? sender, EventArgs e)
@@ -217,7 +424,19 @@ public partial class MainWindow : Window
         }
 
         _isShuttingDown = true;
+        _loadCts?.Cancel();
+        _loadCts?.Dispose();
+        _loadCts = null;
         _viewModel.PropertyChanged -= OnViewModelPropertyChanged;
+        PreviewKeyDown -= OnMainWindowPreviewKeyDown;
+        VideoFeed.ExpandPopupRequested -= OnVideoExpandPopupRequested;
+        VideoFeed.PlaybackStateChanged -= OnVideoPlaybackStateChanged;
+        _cameraPopup?.Close();
+        foreach (LogPopupWindow logPopup in _logPopups.ToArray())
+        {
+            logPopup.Close();
+        }
+        _logPopups.Clear();
 
         try
         {

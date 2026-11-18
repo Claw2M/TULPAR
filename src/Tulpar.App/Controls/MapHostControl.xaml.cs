@@ -8,6 +8,7 @@ using Microsoft.Web.WebView2.Core;
 using Tulpar.App.Services;
 using Tulpar.App.ViewModels;
 using Tulpar.Core.Session;
+using Tulpar.Core.Vehicles;
 
 namespace Tulpar.App.Controls;
 
@@ -29,6 +30,16 @@ public partial class MapHostControl : UserControl, IDisposable
     private bool _disposed;
     private string _pendingLayerId = "satellite";
     private bool _lastConnectedState;
+    private bool _isMapVehicleReset = true;
+    private bool _hasSentVehicleState;
+    private double _lastSentLat;
+    private double _lastSentLon;
+    private double _lastSentHeadingDeg;
+    private bool _lastSentHasHome;
+    private double _lastSentHomeLat;
+    private double _lastSentHomeLon;
+    private VehicleCategory _lastSentCategory;
+    private int _lastSentActiveWaypointSeq = -1;
 
     public MapHostControl()
     {
@@ -99,6 +110,11 @@ public partial class MapHostControl : UserControl, IDisposable
         PostJsonMessage(new { type = "centerOnVehicle" });
     }
 
+    public void SetFollowVehicle(bool enabled)
+    {
+        PostJsonMessage(new { type = "setFollowVehicle", enabled });
+    }
+
     public void RefreshLayers()
     {
         PostJsonMessage(new { type = "refreshLayers" });
@@ -138,10 +154,14 @@ public partial class MapHostControl : UserControl, IDisposable
             _pendingLayerId = vm.SelectedMapLayerId;
             vm.VehicleMapStateUpdated += OnVehicleMapStateUpdated;
             vm.MissionPlanChanged += OnMissionPlanChanged;
+            vm.SelectedMissionSeqChanged += OnSelectedMissionSeqChanged;
             vm.FencePolygonChanged += OnFencePolygonChanged;
+            vm.RallyPointsChanged += OnRallyPointsChanged;
             vm.MapEditModeChanged += OnMapEditModeChanged;
+            vm.FollowVehicleChanged += SetFollowVehicle;
             vm.MissionItems.CollectionChanged += OnCollectionChangedSyncMission;
             vm.FencePoints.CollectionChanged += OnCollectionChangedSyncFence;
+            vm.RallyPoints.CollectionChanged += OnCollectionChangedSyncRally;
 
             if (_isMapReady)
             {
@@ -159,10 +179,14 @@ public partial class MapHostControl : UserControl, IDisposable
 
         _viewModel.VehicleMapStateUpdated -= OnVehicleMapStateUpdated;
         _viewModel.MissionPlanChanged -= OnMissionPlanChanged;
+        _viewModel.SelectedMissionSeqChanged -= OnSelectedMissionSeqChanged;
         _viewModel.FencePolygonChanged -= OnFencePolygonChanged;
+        _viewModel.RallyPointsChanged -= OnRallyPointsChanged;
         _viewModel.MapEditModeChanged -= OnMapEditModeChanged;
+        _viewModel.FollowVehicleChanged -= SetFollowVehicle;
         _viewModel.MissionItems.CollectionChanged -= OnCollectionChangedSyncMission;
         _viewModel.FencePoints.CollectionChanged -= OnCollectionChangedSyncFence;
+        _viewModel.RallyPoints.CollectionChanged -= OnCollectionChangedSyncRally;
         _viewModel = null;
     }
 
@@ -205,11 +229,17 @@ public partial class MapHostControl : UserControl, IDisposable
 
     private void OnVehicleMapStateUpdated(TelemetrySnapshot snapshot)
     {
+        const double CoordEpsilonDeg = 1e-7;
+        const double HeadingEpsilonDeg = 0.25;
+
         bool resetTrail = _lastConnectedState && !snapshot.IsConnected;
         _lastConnectedState = snapshot.IsConnected;
 
         if (resetTrail)
         {
+            _isMapVehicleReset = true;
+            _hasSentVehicleState = false;
+            _lastSentActiveWaypointSeq = -1;
             PostJsonMessage(new
             {
                 type = "updateVehicle",
@@ -222,11 +252,75 @@ public partial class MapHostControl : UserControl, IDisposable
                     hasHome = false,
                     homeLat = 0.0,
                     homeLon = 0.0,
+                    activeWaypointSeq = -1,
                     trail = Array.Empty<object>()
                 }
             });
             return;
         }
+
+        if (!snapshot.IsConnected)
+        {
+            if (_isMapVehicleReset)
+            {
+                return;
+            }
+
+            _isMapVehicleReset = true;
+            _hasSentVehicleState = false;
+            _lastSentActiveWaypointSeq = -1;
+            PostJsonMessage(new
+            {
+                type = "updateVehicle",
+                payload = new
+                {
+                    lat = 0.0,
+                    lon = 0.0,
+                    headingDeg = 0.0,
+                    category = "Unknown",
+                    hasHome = false,
+                    homeLat = 0.0,
+                    homeLon = 0.0,
+                    activeWaypointSeq = -1,
+                    trail = Array.Empty<object>()
+                }
+            });
+            return;
+        }
+
+        _isMapVehicleReset = false;
+
+        if (_hasSentVehicleState)
+        {
+            double headingDelta = Math.Abs(((snapshot.HeadingDeg - _lastSentHeadingDeg + 540.0) % 360.0) - 180.0);
+            bool samePosition =
+                Math.Abs(snapshot.Latitude - _lastSentLat) <= CoordEpsilonDeg &&
+                Math.Abs(snapshot.Longitude - _lastSentLon) <= CoordEpsilonDeg &&
+                headingDelta <= HeadingEpsilonDeg;
+            bool sameHome =
+                snapshot.HasHome == _lastSentHasHome &&
+                (!snapshot.HasHome ||
+                 (Math.Abs(snapshot.HomeLatitude - _lastSentHomeLat) <= CoordEpsilonDeg &&
+                  Math.Abs(snapshot.HomeLongitude - _lastSentHomeLon) <= CoordEpsilonDeg));
+            bool sameMeta =
+                snapshot.VehicleCategory == _lastSentCategory &&
+                snapshot.ActiveWaypointSeq == _lastSentActiveWaypointSeq;
+
+            if (samePosition && sameHome && sameMeta)
+            {
+                return;
+            }
+        }
+
+        _hasSentVehicleState = true;
+        _lastSentLat = snapshot.Latitude;
+        _lastSentLon = snapshot.Longitude;
+        _lastSentHeadingDeg = snapshot.HeadingDeg;
+        _lastSentHasHome = snapshot.HasHome;
+        _lastSentHomeLat = snapshot.HomeLatitude;
+        _lastSentHomeLon = snapshot.HomeLongitude;
+        _lastSentCategory = snapshot.VehicleCategory;
+        _lastSentActiveWaypointSeq = snapshot.ActiveWaypointSeq;
 
         PostJsonMessage(new
         {
@@ -239,7 +333,8 @@ public partial class MapHostControl : UserControl, IDisposable
                 category = snapshot.VehicleCategory.ToString(),
                 hasHome = snapshot.HasHome,
                 homeLat = snapshot.HomeLatitude,
-                homeLon = snapshot.HomeLongitude
+                homeLon = snapshot.HomeLongitude,
+                activeWaypointSeq = snapshot.ActiveWaypointSeq
             }
         });
     }
@@ -250,6 +345,22 @@ public partial class MapHostControl : UserControl, IDisposable
     private void OnCollectionChangedSyncFence(object? sender, NotifyCollectionChangedEventArgs e) =>
         OnFencePolygonChanged();
 
+    private void OnCollectionChangedSyncRally(object? sender, NotifyCollectionChangedEventArgs e) =>
+        OnRallyPointsChanged();
+
+    private void OnRallyPointsChanged()
+    {
+        if (_viewModel is null)
+        {
+            return;
+        }
+
+        var points = _viewModel.RallyPoints
+            .Select(p => new { lat = p.Latitude, lon = p.Longitude, alt = p.AltitudeMeters })
+            .ToArray();
+        PostJsonMessage(new { type = "setRally", points });
+    }
+
     private void OnMissionPlanChanged()
     {
         if (_viewModel is null)
@@ -258,9 +369,22 @@ public partial class MapHostControl : UserControl, IDisposable
         }
 
         var items = _viewModel.MissionItems
-            .Select(m => new { seq = m.Seq, lat = m.Latitude, lon = m.Longitude })
+            .Select(m => new
+            {
+                seq = m.Seq,
+                lat = m.Latitude,
+                lon = m.Longitude,
+                alt = m.Altitude,
+                command = (int)m.Command,
+                param1 = m.Param1
+            })
             .ToArray();
         PostJsonMessage(new { type = "setMission", items });
+    }
+
+    private void OnSelectedMissionSeqChanged(int seq)
+    {
+        PostJsonMessage(new { type = "setSelectedWaypoint", payload = new { seq } });
     }
 
     private void OnFencePolygonChanged()
@@ -282,7 +406,9 @@ public partial class MapHostControl : UserControl, IDisposable
         {
             MapEditMode.Mission => "mission",
             MapEditMode.Fence => "fence",
+            MapEditMode.Rally => "rally",
             MapEditMode.Bounds => "bounds",
+            MapEditMode.Measure => "measure",
             _ => "none"
         };
         PostJsonMessage(new { type = "setEditMode", mode = modeKey });
@@ -295,11 +421,15 @@ public partial class MapHostControl : UserControl, IDisposable
             return;
         }
 
+        _hasSentVehicleState = false;
         RefreshLayers();
         SetLayer(_pendingLayerId);
+        SetFollowVehicle(_viewModel.IsFollowVehicleEnabled);
         OnMapEditModeChanged(_viewModel.ActiveMapEditMode);
         OnMissionPlanChanged();
+        OnSelectedMissionSeqChanged(_viewModel.SelectedMissionItem?.Seq ?? -1);
         OnFencePolygonChanged();
+        OnRallyPointsChanged();
         OnVehicleMapStateUpdated(_viewModel.Snapshot);
     }
 

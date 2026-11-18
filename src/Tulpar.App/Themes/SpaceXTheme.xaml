@@ -34,26 +34,28 @@
 
     <!-- Radius Scale -->
     <CornerRadius x:Key="RadiusXs">4</CornerRadius>
-    <CornerRadius x:Key="RadiusSm">8</CornerRadius>
-    <CornerRadius x:Key="RadiusMd">16</CornerRadius>
-    <CornerRadius x:Key="RadiusPill">32</CornerRadius>
+    <CornerRadius x:Key="RadiusSm">6</CornerRadius>
+    <CornerRadius x:Key="RadiusMd">8</CornerRadius>
+    <CornerRadius x:Key="RadiusPill">6</CornerRadius>
 
     <!-- Typography Families (Embedded D-DIN with Condensed Industrial Fallbacks) -->
     <FontFamily x:Key="DisplayFontFamily">pack://application:,,,/Tulpar.App;component/Assets/Fonts/#D-DIN, Arial Narrow, Arial, Verdana</FontFamily>
     <FontFamily x:Key="UiFontFamily">pack://application:,,,/Tulpar.App;component/Assets/Fonts/#D-DIN, Arial Narrow, Arial, Verdana</FontFamily>
 
-    <!-- Ghost Pill CTA Button (button-ghost-on-dark) -->
+    <!-- Tactical Ghost CTA Button (button-ghost-on-dark, CornerRadius=6) -->
     <Style x:Key="GhostPillButtonStyle" TargetType="{x:Type Button}">
         <Setter Property="Background" Value="{StaticResource CanvasNightBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource OnPrimaryBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="12" />
         <Setter Property="FontWeight" Value="Bold" />
-        <Setter Property="Padding" Value="18,8" />
+        <Setter Property="MinHeight" Value="30" />
+        <Setter Property="Padding" Value="14,5" />
         <Setter Property="HorizontalContentAlignment" Value="Center" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="UseLayoutRounding" Value="True" />
@@ -65,7 +67,7 @@
                             Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="32"
+                            CornerRadius="6"
                             Padding="{TemplateBinding Padding}"
                             SnapsToDevicePixels="True">
                         <ContentPresenter Content="{Binding Content, RelativeSource={RelativeSource TemplatedParent}, Converter={StaticResource UppercaseContentConverter}}"
@@ -125,7 +127,7 @@
         </Style.Triggers>
     </Style>
 
-    <!-- Text Input (rounded.xs = 4, 1px #3a3a3f hairline) -->
+    <!-- Text Input (CornerRadius=6, 1px #3a3a3f hairline, unclipped text viewport) -->
     <Style x:Key="SpaceXTextBoxStyle" TargetType="{x:Type TextBox}">
         <Setter Property="Background" Value="{StaticResource CanvasNightSoftBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource HairlineDarkBrush}" />
@@ -134,9 +136,11 @@
         <Setter Property="CaretBrush" Value="{StaticResource OnPrimaryBrush}" />
         <Setter Property="SelectionBrush" Value="{StaticResource OnPrimaryMuteBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
-        <Setter Property="FontSize" Value="13" />
-        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="FontSize" Value="12" />
+        <Setter Property="MinHeight" Value="30" />
+        <Setter Property="Padding" Value="8,2" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="UseLayoutRounding" Value="True" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -147,10 +151,11 @@
                             Background="{TemplateBinding Background}"
                             BorderBrush="{TemplateBinding BorderBrush}"
                             BorderThickness="{TemplateBinding BorderThickness}"
-                            CornerRadius="4"
+                            CornerRadius="6"
+                            Padding="{TemplateBinding Padding}"
                             SnapsToDevicePixels="True">
                         <ScrollViewer x:Name="PART_ContentHost"
-                                      Margin="{TemplateBinding Padding}"
+                                      Margin="0"
                                       Focusable="False"
                                       HorizontalScrollBarVisibility="Hidden"
                                       VerticalScrollBarVisibility="Hidden"
@@ -208,17 +213,19 @@
         </Style.Triggers>
     </Style>
 
-    <!-- ComboBox (rounded.xs = 4, 1px #3a3a3f hairline, flat popup without drop shadows) -->
+    <!-- ComboBox (CornerRadius=6, 1px #3a3a3f hairline, flat popup without drop shadows) -->
     <Style x:Key="SpaceXComboBoxStyle" TargetType="{x:Type ComboBox}">
         <Setter Property="Background" Value="{StaticResource CanvasNightSoftBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource HairlineDarkBrush}" />
         <Setter Property="BorderThickness" Value="1" />
         <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
-        <Setter Property="FontSize" Value="13" />
+        <Setter Property="FontSize" Value="12" />
         <Setter Property="FontWeight" Value="Bold" />
-        <Setter Property="Padding" Value="10,6" />
+        <Setter Property="MinHeight" Value="30" />
+        <Setter Property="Padding" Value="8,2" />
         <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="SnapsToDevicePixels" Value="True" />
         <Setter Property="UseLayoutRounding" Value="True" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
@@ -231,7 +238,7 @@
                                 Background="{TemplateBinding Background}"
                                 BorderBrush="{TemplateBinding BorderBrush}"
                                 BorderThickness="{TemplateBinding BorderThickness}"
-                                CornerRadius="4"
+                                CornerRadius="6"
                                 SnapsToDevicePixels="True">
                             <Grid>
                                 <Grid.ColumnDefinitions>
@@ -385,9 +392,9 @@
         <Setter Property="Background" Value="{StaticResource CanvasNightBrush}" />
         <Setter Property="Foreground" Value="{StaticResource InkMuteBrush}" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
-        <Setter Property="FontSize" Value="12" />
+        <Setter Property="FontSize" Value="11.5" />
         <Setter Property="FontWeight" Value="Bold" />
-        <Setter Property="Padding" Value="12,8" />
+        <Setter Property="Padding" Value="9,7" />
         <Setter Property="Cursor" Value="Hand" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Setter Property="Template">
@@ -535,7 +542,9 @@
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
         <Setter Property="FontSize" Value="11" />
         <Setter Property="FontWeight" Value="Bold" />
-        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="MinHeight" Value="28" />
+        <Setter Property="Padding" Value="8,5" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="HorizontalContentAlignment" Value="Left" />
     </Style>
 
@@ -543,6 +552,7 @@
         <Setter Property="Background" Value="{StaticResource CanvasNightSoftBrush}" />
         <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
         <Setter Property="BorderThickness" Value="0" />
+        <Setter Property="MinHeight" Value="30" />
         <Style.Triggers>
             <Trigger Property="IsSelected" Value="True">
                 <Setter Property="Background" Value="{StaticResource HairlineDarkBrush}" />
@@ -559,7 +569,9 @@
         <Setter Property="Foreground" Value="{StaticResource OnPrimaryBrush}" />
         <Setter Property="BorderBrush" Value="{StaticResource HairlineDarkBrush}" />
         <Setter Property="BorderThickness" Value="0,0,1,1" />
-        <Setter Property="Padding" Value="6,4" />
+        <Setter Property="Padding" Value="8,4" />
+        <Setter Property="VerticalContentAlignment" Value="Center" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="FocusVisualStyle" Value="{x:Null}" />
         <Style.Triggers>
             <Trigger Property="IsSelected" Value="True">
@@ -579,15 +591,48 @@
         <Setter Property="VerticalGridLinesBrush" Value="{StaticResource HairlineDarkBrush}" />
         <Setter Property="HeadersVisibility" Value="Column" />
         <Setter Property="RowHeaderWidth" Value="0" />
+        <Setter Property="MinRowHeight" Value="30" />
         <Setter Property="AutoGenerateColumns" Value="False" />
         <Setter Property="CanUserAddRows" Value="False" />
         <Setter Property="CanUserDeleteRows" Value="False" />
         <Setter Property="SelectionMode" Value="Single" />
         <Setter Property="FontFamily" Value="{StaticResource UiFontFamily}" />
         <Setter Property="FontSize" Value="12" />
+        <Setter Property="TextOptions.TextFormattingMode" Value="Display" />
         <Setter Property="ColumnHeaderStyle" Value="{StaticResource SpaceXDataGridColumnHeaderStyle}" />
         <Setter Property="RowStyle" Value="{StaticResource SpaceXDataGridRowStyle}" />
         <Setter Property="CellStyle" Value="{StaticResource SpaceXDataGridCellStyle}" />
+    </Style>
+
+    <!-- SpaceX Log ListBox Item (Clean spacing, pixel scroll, zero vertical text clipping) -->
+    <Style x:Key="SpaceXLogItemStyle" TargetType="{x:Type ListBoxItem}">
+        <Setter Property="Background" Value="Transparent" />
+        <Setter Property="Padding" Value="8,6" />
+        <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+        <Setter Property="FocusVisualStyle" Value="{x:Null}" />
+        <Setter Property="Template">
+            <Setter.Value>
+                <ControlTemplate TargetType="{x:Type ListBoxItem}">
+                    <Border x:Name="ItemBorder"
+                            Background="{TemplateBinding Background}"
+                            BorderBrush="#1A1A1F"
+                            BorderThickness="0,0,0,1"
+                            Padding="{TemplateBinding Padding}"
+                            SnapsToDevicePixels="True">
+                        <ContentPresenter HorizontalAlignment="{TemplateBinding HorizontalContentAlignment}"
+                                          VerticalAlignment="Center" />
+                    </Border>
+                    <ControlTemplate.Triggers>
+                        <Trigger Property="IsMouseOver" Value="True">
+                            <Setter TargetName="ItemBorder" Property="Background" Value="#0A0A0C" />
+                        </Trigger>
+                        <Trigger Property="IsSelected" Value="True">
+                            <Setter TargetName="ItemBorder" Property="Background" Value="#141418" />
+                        </Trigger>
+                    </ControlTemplate.Triggers>
+                </ControlTemplate>
+            </Setter.Value>
+        </Setter>
     </Style>
 
 </ResourceDictionary>

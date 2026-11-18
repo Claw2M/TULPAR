@@ -19,6 +19,11 @@ public sealed class MavlinkParser
     public event Action<string>? FrameWarning;
 
     /// <summary>
+    /// Raised for each valid parsed frame along with its packet-aligned original wire bytes (header + payload + CRC + optional signature).
+    /// </summary>
+    public event Action<MavlinkFrame, ReadOnlyMemory<byte>>? FrameWithRawBytesReceived;
+
+    /// <summary>
     /// Resets any buffered partial frame bytes.
     /// </summary>
     public void Reset()
@@ -64,6 +69,7 @@ public sealed class MavlinkParser
                 {
                     frames ??= new List<MavlinkFrame>();
                     frames.Add(frame);
+                    FrameWithRawBytesReceived?.Invoke(frame, frame.RawBytes);
                 }
             }
             else
@@ -146,8 +152,9 @@ public sealed class MavlinkParser
             return false;
         }
 
+        byte[] rawPacket = _buffer.AsSpan(pos, frameLen).ToArray();
         byte[] payload = _buffer.AsSpan(pos + 6, payloadLen).ToArray();
-        frame = new MavlinkFrame(1, seq, sysId, compId, msgId, payload);
+        frame = new MavlinkFrame(1, seq, sysId, compId, msgId, payload, RawBytes: rawPacket);
         pos += frameLen;
         return true;
     }
@@ -210,8 +217,9 @@ public sealed class MavlinkParser
             return true;
         }
 
+        byte[] rawPacket = _buffer.AsSpan(pos, frameLen).ToArray();
         byte[] payload = _buffer.AsSpan(pos + 10, payloadLen).ToArray();
-        frame = new MavlinkFrame(2, seq, sysId, compId, msgId, payload, incompatFlags, compatFlags);
+        frame = new MavlinkFrame(2, seq, sysId, compId, msgId, payload, incompatFlags, compatFlags, rawPacket);
         pos += frameLen;
         return true;
     }

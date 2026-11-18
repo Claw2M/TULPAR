@@ -754,4 +754,157 @@ public class TransportAndRecorderTests
             base.Dispose(disposing);
         }
     }
+
+    [Fact]
+    public void TelemetryRecorder_AutoFlushesOnWriteThresholdAndTimeInterval()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "tulpar-autoflush-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var fakeTime = new AdvancingTimeProvider();
+            using var recorder = new TelemetryRecorder(tempDir, fakeTime);
+            byte[] hb = EncodeHeartbeat(sysId: 1, seq: 1);
+
+            // 1. Write 49 small packets: auto-flush at 50 writes should flush without calling Flush()
+            for (int i = 0; i < 49; i++)
+            {
+                recorder.RecordRawFrame(fakeTime.GetUtcNow(), hb);
+            }
+
+            // 50th write triggers automatic flush
+            recorder.RecordRawFrame(fakeTime.GetUtcNow(), hb);
+            long lengthAfter50 = new FileInfo(recorder.TlogFilePath).Length;
+            Assert.Equal(50L * (8 + hb.Length), lengthAfter50);
+
+            // 2. Write 1 more packet, advance FakeTimeProvider by 2.1 seconds, write 1 more -> auto-flushes
+            recorder.RecordRawFrame(fakeTime.GetUtcNow(), hb);
+            fakeTime.Advance(TimeSpan.FromMilliseconds(2100));
+            recorder.RecordRawFrame(fakeTime.GetUtcNow(), hb);
+
+            long lengthAfterTimeFlush = new FileInfo(recorder.TlogFilePath).Length;
+            Assert.Equal(52L * (8 + hb.Length), lengthAfterTimeFlush);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task TlogReplayReader_ReadsFiltersHandlesCorruptionAndReplaysToSession()
+    {
+        string tempDir = Path.Combine(Path.GetTempPath(), "tulpar-tlog-replay-" + Guid.NewGuid().ToString("N"));
+        try
+        {
+            var t0 = new DateTimeOffset(2026, 11, 18, 9, 0, 0, TimeSpan.Zero);
+            byte[] sys1Hb = EncodeHeartbeat(sysId: 1, seq: 1);
+            byte[] sys1Pos = MavlinkEncoder.EncodeV2(1, 1, 2, new GlobalPositionIntMessage(100u, 399250180, 328369560, 120000, 50000));
+            byte[] sys2Hb = EncodeHeartbeat(sysId: 2, seq: 1);
+
+            var parser = new MavlinkParser();
+            string tlogPath;
+
+            using (var recorder = new TelemetryRecorder(tempDir))
+            {
+                tlogPath = recorder.TlogFilePath;
+                // Feed concatenated buffer through parser so 1-frame-per-record is written via FrameWithRawBytesReceived
+                DateTimeOffset currentTs = t0;
+                parser.FrameWithRawBytesReceived += (_, raw) =>
+                {
+                    recorder.RecordRawFrame(currentTs, raw.Span);
+                    currentTs = currentTs.AddMilliseconds(50);
+                };
+
+                parser.Feed([..sys1Hb, ..sys1Pos, ..sys2Hb]);
+                recorder.Flush();
+            }
+
+            // Verify all 3 entries read cleanly (sync & async)
+            List<TlogEntry> allEntries = TlogReplayReader.ReadFile(tlogPath).ToList();
+            Assert.Equal(3, allEntries.Count);
+            Assert.Equal(t0, allEntries[0].TimestampUtc);
+            Assert.Equal(t0.AddMilliseconds(50), allEntries[1].TimestampUtc);
+            Assert.Equal(t0.AddMilliseconds(100), allEntries[2].TimestampUtc);
+            Assert.Equal(sys1Hb, allEntries[0].RawPacketBytes.ToArray());
+            Assert.Equal(sys1Pos, allEntries[1].RawPacketBytes.ToArray());
+            Assert.Equal(sys2Hb, allEntries[2].RawPacketBytes.ToArray());
+
+            var asyncEntries = new List<TlogEntry>();
+            await foreach (TlogEntry entry in TlogReplayReader.ReadFileAsync(tlogPath))
+            {
+                asyncEntries.Add(entry);
+            }
+            Assert.Equal(3, asyncEntries.Count);
+
+            // Filter by SystemId + MessageIds + time window
+            var filtered = TlogReplayReader.ReadFile(
+                tlogPath,
+                new TlogReplayFilter(
+                    SystemId: 1,
+                    MessageIds: new HashSet<uint> { GlobalPositionIntMessage.MsgId },
+                    StartUtc: t0.AddMilliseconds(10),
+                    EndUtc: t0.AddMilliseconds(90))).ToList();
+            TlogEntry singleFiltered = Assert.Single(filtered);
+            Assert.Equal(GlobalPositionIntMessage.MsgId, singleFiltered.Frame.MessageId);
+            Assert.Equal(399250180, GlobalPositionIntMessage.Decode(singleFiltered.Frame).Lat);
+
+            // Corrupt CRC entry + truncated EOF bytes must be skipped/stopped gracefully
+            byte[] badCrcPacket = (byte[])sys1Hb.Clone();
+            badCrcPacket[^1] ^= 0xFF;
+            byte[] existingBytes = File.ReadAllBytes(tlogPath);
+            using (var fs = new FileStream(tlogPath, FileMode.Create, FileAccess.Write))
+            {
+                fs.Write(existingBytes);
+                Span<byte> ts = stackalloc byte[8];
+                BinaryPrimitives.WriteUInt64BigEndian(ts, (ulong)((t0.AddSeconds(1).UtcTicks - DateTimeOffset.UnixEpoch.UtcTicks) / 10));
+                fs.Write(ts);
+                fs.Write(badCrcPacket);
+                // Append truncated 5-byte EOF fragment
+                fs.Write([0x00, 0x01, 0x02, 0x03, 0x04]);
+            }
+
+            List<TlogEntry> resilientEntries = TlogReplayReader.ReadFile(tlogPath).ToList();
+            Assert.Equal(3, resilientEntries.Count);
+
+            // Replay into VehicleSession (filtering to sysId=1, unthrottled)
+            var session = new VehicleSession();
+            await TlogReplayReader.ReplayToSessionAsync(
+                tlogPath,
+                session,
+                speedMultiplier: 0.0,
+                filter: new TlogReplayFilter(SystemId: 1));
+            Assert.True(session.Current.IsConnected);
+            Assert.Equal((byte)1, session.Current.SystemId);
+            Assert.Equal(39.9250180, session.Current.Latitude, 7);
+            Assert.Equal(50.0, session.Current.AltitudeRelativeMeters, 3);
+        }
+        finally
+        {
+            if (Directory.Exists(tempDir))
+            {
+                Directory.Delete(tempDir, recursive: true);
+            }
+        }
+    }
+
+    private sealed class AdvancingTimeProvider : TimeProvider
+    {
+        private DateTimeOffset _utcNow = new(2026, 11, 18, 10, 0, 0, TimeSpan.Zero);
+        private long _timestampTicks = 10_000_000;
+
+        public override long TimestampFrequency => TimeSpan.TicksPerSecond;
+
+        public override long GetTimestamp() => _timestampTicks;
+
+        public override DateTimeOffset GetUtcNow() => _utcNow;
+
+        public void Advance(TimeSpan delta)
+        {
+            _utcNow += delta;
+            _timestampTicks += delta.Ticks;
+        }
+    }
 }

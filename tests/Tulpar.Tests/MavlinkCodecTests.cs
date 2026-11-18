@@ -339,6 +339,10 @@ public class MavlinkCodecTests
     [InlineData(1u, (byte)124)]
     [InlineData(2u, (byte)137)]
     [InlineData(11u, (byte)89)]
+    [InlineData(20u, (byte)214)]
+    [InlineData(21u, (byte)159)]
+    [InlineData(22u, (byte)220)]
+    [InlineData(23u, (byte)168)]
     [InlineData(24u, (byte)24)]
     [InlineData(30u, (byte)39)]
     [InlineData(33u, (byte)104)]
@@ -361,7 +365,10 @@ public class MavlinkCodecTests
     [InlineData(86u, (byte)5)]
     [InlineData(109u, (byte)185)]
     [InlineData(147u, (byte)154)]
+    [InlineData(193u, (byte)71)]
+    [InlineData(241u, (byte)90)]
     [InlineData(242u, (byte)104)]
+    [InlineData(245u, (byte)130)]
     [InlineData(253u, (byte)83)]
     public void TryGetCrcExtra_SupportedMessageIds_ReturnsExactCommonXmlByte(uint messageId, byte expectedCrcExtra)
     {
@@ -429,7 +436,14 @@ public class MavlinkCodecTests
             new MissionClearAllMessage(1, 1, MavMissionType.Fence),
             new MissionCurrentMessage(2, 5, 3, 1, 11u, 22u, 33u),
             new MissionSetCurrentMessage(1, 1, 2),
-            new MissionItemReachedMessage(4)
+            new MissionItemReachedMessage(4),
+            new ParamRequestReadMessage(1, 1, "WPNAV_SPEED", -1),
+            new ParamRequestListMessage(1, 1),
+            new ParamValueMessage("SYSID_THISMAV", 1f, MavParamType.Uint8, 420, 0),
+            new ParamSetMessage(1, 1, "BATT_CAPACITY", 5200f, MavParamType.Int32),
+            new EkfStatusReportMessage(EkfStatusFlags.Attitude | EkfStatusFlags.VelocityHoriz | EkfStatusFlags.PosHorizAbs, 0.1f, 0.2f, 0.3f, 0.05f, 0.02f, 0.01f),
+            new VibrationMessage(123456789UL, 1.25f, 2.5f, 3.75f, 1, 2, 3),
+            new ExtendedSysStateMessage(MavVtolState.Fw, MavLandedState.InAir)
         };
 
         var parser = new MavlinkParser();
@@ -444,6 +458,10 @@ public class MavlinkCodecTests
                 1 => SysStatusMessage.Decode(frame),
                 2 => SystemTimeMessage.Decode(frame),
                 11 => SetModeMessage.Decode(frame),
+                20 => ParamRequestReadMessage.Decode(frame),
+                21 => ParamRequestListMessage.Decode(frame),
+                22 => ParamValueMessage.Decode(frame),
+                23 => ParamSetMessage.Decode(frame),
                 24 => GpsRawIntMessage.Decode(frame),
                 30 => AttitudeMessage.Decode(frame),
                 33 => GlobalPositionIntMessage.Decode(frame),
@@ -466,7 +484,10 @@ public class MavlinkCodecTests
                 86 => SetPositionTargetGlobalIntMessage.Decode(frame),
                 109 => RadioStatusMessage.Decode(frame),
                 147 => BatteryStatusMessage.Decode(frame),
+                193 => EkfStatusReportMessage.Decode(frame),
+                241 => VibrationMessage.Decode(frame),
                 242 => HomePositionMessage.Decode(frame),
+                245 => ExtendedSysStateMessage.Decode(frame),
                 253 => StatusTextMessage.Decode(frame),
                 _ => throw new InvalidOperationException($"Unexpected message ID {frame.MessageId}")
             };
@@ -589,5 +610,100 @@ public class MavlinkCodecTests
         parser.Reset();
         var afterReset = Assert.Single(parser.Feed(validPacket));
         Assert.Equal(hb, HeartbeatMessage.Decode(afterReset));
+    }
+
+    [Fact]
+    public void WireLayout_ParamEkfVibrationExtendedSysState_MatchOfficialOffsets()
+    {
+        var reqRead = new ParamRequestReadMessage(7, 42, "1234567890ABCDEF", -1);
+        byte[] rrBytes = reqRead.EncodePayload();
+        Assert.Equal(20, rrBytes.Length);
+        Assert.Equal((short)-1, BinaryPrimitives.ReadInt16LittleEndian(rrBytes.AsSpan(0, 2)));
+        Assert.Equal(7, rrBytes[2]);
+        Assert.Equal(42, rrBytes[3]);
+        Assert.Equal((byte)'1', rrBytes[4]);
+        Assert.Equal((byte)'F', rrBytes[19]);
+        Assert.Equal(reqRead, ParamRequestReadMessage.Decode(rrBytes));
+
+        var paramVal = new ParamValueMessage("WPNAV_SPEED", 1250.5f, MavParamType.Real32, 850, 12);
+        byte[] pvBytes = paramVal.EncodePayload();
+        Assert.Equal(25, pvBytes.Length);
+        Assert.Equal(1250.5f, BinaryPrimitives.ReadSingleLittleEndian(pvBytes.AsSpan(0, 4)));
+        Assert.Equal((ushort)850, BinaryPrimitives.ReadUInt16LittleEndian(pvBytes.AsSpan(4, 2)));
+        Assert.Equal((ushort)12, BinaryPrimitives.ReadUInt16LittleEndian(pvBytes.AsSpan(6, 2)));
+        Assert.Equal((byte)'W', pvBytes[8]);
+        Assert.Equal((byte)MavParamType.Real32, pvBytes[24]);
+        Assert.Equal(paramVal, ParamValueMessage.Decode(pvBytes));
+
+        var paramSet = new ParamSetMessage(1, 1, "ARMING_CHECK", 1f, MavParamType.Int32);
+        byte[] psBytes = paramSet.EncodePayload();
+        Assert.Equal(23, psBytes.Length);
+        Assert.Equal(1f, BinaryPrimitives.ReadSingleLittleEndian(psBytes.AsSpan(0, 4)));
+        Assert.Equal(1, psBytes[4]);
+        Assert.Equal(1, psBytes[5]);
+        Assert.Equal((byte)'A', psBytes[6]);
+        Assert.Equal((byte)MavParamType.Int32, psBytes[22]);
+        Assert.Equal(paramSet, ParamSetMessage.Decode(psBytes));
+
+        var ekf = new EkfStatusReportMessage(
+            EkfStatusFlags.Attitude | EkfStatusFlags.PosHorizAbs,
+            0.12f, 0.23f, 0.34f, 0.45f, 0.56f, 0.67f);
+        byte[] ekfBytes = ekf.EncodePayload();
+        Assert.Equal(26, ekfBytes.Length);
+        Assert.Equal(0.12f, BinaryPrimitives.ReadSingleLittleEndian(ekfBytes.AsSpan(0, 4)));
+        Assert.Equal(0.56f, BinaryPrimitives.ReadSingleLittleEndian(ekfBytes.AsSpan(16, 4)));
+        Assert.Equal((ushort)(EkfStatusFlags.Attitude | EkfStatusFlags.PosHorizAbs),
+            BinaryPrimitives.ReadUInt16LittleEndian(ekfBytes.AsSpan(20, 2)));
+        Assert.Equal(0.67f, BinaryPrimitives.ReadSingleLittleEndian(ekfBytes.AsSpan(22, 4)));
+        Assert.Equal(ekf, EkfStatusReportMessage.Decode(ekfBytes));
+
+        var vib = new VibrationMessage(987654321UL, 1.1f, 2.2f, 3.3f, 10, 20, 30);
+        byte[] vibBytes = vib.EncodePayload();
+        Assert.Equal(32, vibBytes.Length);
+        Assert.Equal(987654321UL, BinaryPrimitives.ReadUInt64LittleEndian(vibBytes.AsSpan(0, 8)));
+        Assert.Equal(1.1f, BinaryPrimitives.ReadSingleLittleEndian(vibBytes.AsSpan(8, 4)));
+        Assert.Equal(2.2f, BinaryPrimitives.ReadSingleLittleEndian(vibBytes.AsSpan(12, 4)));
+        Assert.Equal(3.3f, BinaryPrimitives.ReadSingleLittleEndian(vibBytes.AsSpan(16, 4)));
+        Assert.Equal(10u, BinaryPrimitives.ReadUInt32LittleEndian(vibBytes.AsSpan(20, 4)));
+        Assert.Equal(20u, BinaryPrimitives.ReadUInt32LittleEndian(vibBytes.AsSpan(24, 4)));
+        Assert.Equal(30u, BinaryPrimitives.ReadUInt32LittleEndian(vibBytes.AsSpan(28, 4)));
+        Assert.Equal(vib, VibrationMessage.Decode(vibBytes));
+
+        var extState = new ExtendedSysStateMessage(MavVtolState.TransitionToFw, MavLandedState.Takeoff);
+        byte[] extBytes = extState.EncodePayload();
+        Assert.Equal(2, extBytes.Length);
+        Assert.Equal((byte)MavVtolState.TransitionToFw, extBytes[0]);
+        Assert.Equal((byte)MavLandedState.Takeoff, extBytes[1]);
+        Assert.Equal(extState, ExtendedSysStateMessage.Decode(extBytes));
+    }
+
+    [Fact]
+    public void Parser_CapturesExactPacketAlignedRawBytes_ForV1AndV2ConcatenatedStream()
+    {
+        var hb = new HeartbeatMessage(MavType.Quadrotor, MavAutopilot.ArduPilotMega, MavModeFlag.CustomModeEnabled, 4u, MavState.Active);
+        byte[] v2Packet = MavlinkEncoder.EncodeV2(1, 1, 5, hb);
+
+        var ext = new ExtendedSysStateMessage(MavVtolState.Mc, MavLandedState.OnGround);
+        byte[] v1Packet = BuildRawV1Frame(6, 1, 1, (byte)ExtendedSysStateMessage.MsgId, ext.EncodePayload(), ExtendedSysStateMessage.MsgCrcExtra);
+
+        byte[] combined = [0x99, 0x88, ..v2Packet, ..v1Packet];
+
+        var parser = new MavlinkParser();
+        var eventRecords = new List<(MavlinkFrame Frame, byte[] Raw)>();
+        parser.FrameWithRawBytesReceived += (frame, raw) => eventRecords.Add((frame, raw.ToArray()));
+
+        List<MavlinkFrame> frames = parser.Feed(combined.AsSpan(0, 11)).ToList();
+        frames.AddRange(parser.Feed(combined.AsSpan(11)));
+
+        Assert.Equal(2, frames.Count);
+        Assert.Equal(2, eventRecords.Count);
+
+        Assert.Equal(v2Packet, frames[0].RawBytes.ToArray());
+        Assert.Equal(v2Packet, frames[0].RawPacketBytes.ToArray());
+        Assert.Equal(v2Packet, eventRecords[0].Raw);
+
+        Assert.Equal(v1Packet, frames[1].RawBytes.ToArray());
+        Assert.Equal(v1Packet, frames[1].RawPacketBytes.ToArray());
+        Assert.Equal(v1Packet, eventRecords[1].Raw);
     }
 }

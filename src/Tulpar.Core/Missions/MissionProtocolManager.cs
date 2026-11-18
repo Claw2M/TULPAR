@@ -72,10 +72,8 @@ public sealed class MissionProtocolManager
 
         for (int i = 0; i < items.Count; i++)
         {
-            if (items[i] is null)
-            {
-                throw new ArgumentException($"Mission item at index {i} is null.", nameof(items));
-            }
+            MissionItem item = items[i] ?? throw new ArgumentException($"Mission item at index {i} is null.", nameof(items));
+            ValidateMissionItemCoordinates(item, nameof(items));
         }
 
         return RunTransferAsync(
@@ -109,6 +107,13 @@ public sealed class MissionProtocolManager
                     {
                         MissionAckMessage ack = MissionAckMessage.Decode(response);
                         EnsureAckAccepted(ack, $"{missionType} upload");
+                        if (sentSeqs.Count < total)
+                        {
+                            throw new MissionProtocolException(
+                                $"Received premature {missionType} MISSION_ACK(Accepted) after sending {sentSeqs.Count} of {total} items.",
+                                ack.Type);
+                        }
+
                         progress?.Report(new MissionTransferProgress(missionType, total, total, "Completed"));
                         return true;
                     }
@@ -121,7 +126,9 @@ public sealed class MissionProtocolManager
                     }
 
                     MissionItem item = items[requestedSeq];
-                    currentOutgoing = BuildMissionItemInt(targetSysId, targetCompId, missionType, requestedSeq, item);
+                    currentOutgoing = response.MessageId == MissionRequestMessage.MsgId
+                        ? BuildMissionItem(targetSysId, targetCompId, missionType, requestedSeq, item)
+                        : BuildMissionItemInt(targetSysId, targetCompId, missionType, requestedSeq, item);
 
                     sentSeqs.Add(requestedSeq);
                     progress?.Report(new MissionTransferProgress(missionType, sentSeqs.Count, total, "Uploading"));
@@ -439,13 +446,42 @@ public sealed class MissionProtocolManager
             ? MissionRequestIntMessage.Decode(frame).Seq
             : MissionRequestMessage.Decode(frame).Seq;
 
+    private static void ValidateMissionItemCoordinates(MissionItem item, string paramName)
+    {
+        if (!double.IsFinite(item.Latitude) || item.Latitude is < -90.0 or > 90.0)
+        {
+            throw new ArgumentOutOfRangeException(
+                paramName,
+                item.Latitude,
+                $"Mission item seq {item.Seq} latitude must be finite and within [-90, 90].");
+        }
+
+        if (!double.IsFinite(item.Longitude) || item.Longitude is < -180.0 or > 180.0)
+        {
+            throw new ArgumentOutOfRangeException(
+                paramName,
+                item.Longitude,
+                $"Mission item seq {item.Seq} longitude must be finite and within [-180, 180].");
+        }
+
+        if (!float.IsFinite(item.Altitude))
+        {
+            throw new ArgumentOutOfRangeException(
+                paramName,
+                item.Altitude,
+                $"Mission item seq {item.Seq} altitude must be finite.");
+        }
+    }
+
     private static MissionItemIntMessage BuildMissionItemInt(
         byte targetSysId,
         byte targetCompId,
         MavMissionType missionType,
         ushort seq,
-        MissionItem item) =>
-        new(
+        MissionItem item)
+    {
+        ValidateMissionItemCoordinates(item, nameof(item));
+        return new MissionItemIntMessage(
             TargetSystem: targetSysId,
             TargetComponent: targetCompId,
             Seq: seq,
@@ -461,6 +497,33 @@ public sealed class MissionProtocolManager
             Y: (int)Math.Round(item.Longitude * 1e7),
             Z: item.Altitude,
             MissionType: missionType);
+    }
+
+    private static MissionItemMessage BuildMissionItem(
+        byte targetSysId,
+        byte targetCompId,
+        MavMissionType missionType,
+        ushort seq,
+        MissionItem item)
+    {
+        ValidateMissionItemCoordinates(item, nameof(item));
+        return new MissionItemMessage(
+            TargetSystem: targetSysId,
+            TargetComponent: targetCompId,
+            Seq: seq,
+            Frame: item.Frame,
+            Command: item.Command,
+            Current: 0,
+            Autocontinue: (byte)(item.Autocontinue ? 1 : 0),
+            Param1: item.Param1,
+            Param2: item.Param2,
+            Param3: item.Param3,
+            Param4: item.Param4,
+            X: (float)item.Latitude,
+            Y: (float)item.Longitude,
+            Z: item.Altitude,
+            MissionType: missionType);
+    }
 
     private static MissionItem DecodeMissionItem(MavlinkFrame frame)
     {
@@ -523,10 +586,13 @@ public sealed class MissionProtocolManager
                 frame.Version == 1 || MissionCountMessage.Decode(frame).MissionType == activeType,
 
             MissionAckMessage.MsgId =>
-                frame.Version == 1 || MissionAckMessage.Decode(frame).MissionType == activeType,
+                frame.Version == 1 || MatchesAckMissionType(MissionAckMessage.Decode(frame).MissionType, activeType),
 
             _ => false
         };
+
+    private static bool MatchesAckMissionType(MavMissionType ackType, MavMissionType activeType) =>
+        ackType == activeType || (activeType == MavMissionType.All && ackType == MavMissionType.Mission);
 
     private sealed class ActiveTransfer(byte targetSysId, byte targetCompId, MavMissionType missionType)
     {

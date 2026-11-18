@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="tr">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
+  <title>TULPAR MISSION PLANNER</title>
+  <link rel="stylesheet" href="./maplibre-gl.css" />
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; user-select: none; -webkit-user-select: none; }
+    html, body { width: 100%; height: 100%; background: #000000; color: #FFFFFF; font-family: 'Segoe UI', Roboto, sans-serif; overflow: hidden; font-size: 11px; }
+    .app-grid { display: grid; grid-template-rows: 42px 1fr auto; width: 100vw; height: 100vh; }
+
+    /* HEADER */
+    .header { display: flex; align-items: center; justify-content: space-between; background: #050507; border-bottom: 1px solid #27272A; padding: 4px 10px; gap: 8px; overflow-x: auto; }
+    .card-pill { display: flex; align-items: center; gap: 6px; background: #0A0A0A; border: 1px solid #3A3A3F; border-radius: 18px; padding: 3px 10px; white-space: nowrap; }
+    .brand { font-weight: 800; letter-spacing: 1.5px; font-size: 12px; color: #FFFFFF; margin-right: 4px; }
+    input, select { background: #0A0A0A; color: #FFFFFF; border: 1px solid #3A3A3F; border-radius: 5px; padding: 3px 7px; font-size: 11px; outline: none; }
+    button { background: #0A0A0A; color: #FFFFFF; border: 1px solid #FFFFFF; border-radius: 6px; padding: 4px 10px; font-size: 10.5px; font-weight: 700; cursor: pointer; white-space: nowrap; }
+    button:active { opacity: 0.75; }
+    .btn-danger { border-color: #FF3B30; color: #FF3B30; }
+    .btn-green { border-color: #34C759; color: #34C759; }
+    .btn-amber { border-color: #FF9F0A; color: #FF9F0A; }
+    .btn-active { background: #FFFFFF !important; color: #000000 !important; border-color: #FFFFFF !important; }
+    .dot { width: 7px; height: 7px; border-radius: 50%; background: #34C759; display: inline-block; }
+    .dot-red { background: #FF3B30; }
+
+    /* WORKSPACE */
+    .workspace { display: grid; grid-template-columns: 290px 1fr 240px; height: 100%; overflow: hidden; }
+    @media (max-width: 960px) {
+      .workspace { grid-template-columns: 250px 1fr; }
+      .right-dock { display: none !important; }
+    }
+
+    /* LEFT SIDEBAR */
+    .sidebar { background: #050507; border-right: 1px solid #27272A; display: flex; flex-direction: column; overflow: hidden; }
+    .hud-box { height: 155px; border-bottom: 1px solid #27272A; position: relative; background: #000; }
+    #hudCanvas { width: 100%; height: 100%; display: block; }
+    .tabs { display: flex; border-bottom: 1px solid #27272A; background: #0A0A0A; }
+    .tab-btn { flex: 1; border: none; border-bottom: 2px solid transparent; border-radius: 0; background: transparent; color: #8E8E93; padding: 7px 4px; font-size: 10px; }
+    .tab-btn.active { color: #FFFFFF; border-bottom-color: #FFFFFF; }
+    .tab-body { flex: 1; overflow-y: auto; padding: 8px; }
+    .panel-box { border: 1px solid #27272A; background: #0A0A0A; border-radius: 5px; padding: 8px; margin-bottom: 8px; }
+    .panel-title { font-size: 9.5px; color: #8E8E93; font-weight: 700; letter-spacing: 0.8px; margin-bottom: 6px; display: flex; justify-content: space-between; }
+    .kv-row { display: flex; justify-content: space-between; padding: 3px 0; font-size: 10.5px; border-bottom: 1px solid #16161A; }
+    .grid-2 { display: grid; grid-template-columns: 1fr 1fr; gap: 6px; margin-bottom: 6px; }
+    .input-row { display: grid; grid-template-columns: auto 60px 1fr; gap: 6px; align-items: center; margin-bottom: 6px; }
+
+    /* CENTER STAGE */
+    .stage { display: flex; flex-direction: column; height: 100%; position: relative; background: #000; }
+    .stage-bar { display: flex; align-items: center; justify-content: space-between; background: #050507; border-bottom: 1px solid #27272A; padding: 4px 10px; height: 36px; }
+    #map { flex: 1; width: 100%; height: 100%; }
+    .map-coords { position: absolute; left: 10px; bottom: 10px; background: rgba(0,0,0,0.85); border: 1px solid #3A3A3F; border-radius: 4px; padding: 4px 8px; font-family: monospace; font-size: 10.5px; z-index: 10; pointer-events: none; }
+
+    /* RIGHT DOCK */
+    .right-dock { background: #050507; border-left: 1px solid #27272A; display: flex; flex-direction: column; overflow: hidden; }
+    .cam-box { height: 145px; border-bottom: 1px solid #27272A; display: flex; flex-direction: column; align-items: center; justify-content: center; background: #030305; color: #8E8E93; text-align: center; padding: 10px; }
+    .log-box { flex: 1; display: flex; flex-direction: column; overflow: hidden; padding: 6px; }
+    .log-list { flex: 1; overflow-y: auto; font-family: monospace; font-size: 10px; display: flex; flex-direction: column; gap: 4px; margin-top: 4px; }
+    .log-item { padding: 3px 5px; border-radius: 3px; background: #0A0A0A; border-left: 2px solid #FFFFFF; word-break: break-word; }
+    .log-item.WARN { border-left-color: #FF9F0A; color: #FFD60A; }
+    .log-item.NOTICE { border-left-color: #34C759; color: #E5E5EA; }
+
+    /* BOTTOM MISSION PLANNER */
+    .planner { background: #050507; border-top: 1px solid #27272A; display: flex; flex-direction: column; }
+    .planner-head { display: flex; align-items: center; justify-content: space-between; padding: 4px 10px; border-bottom: 1px solid #1C1C21; }
+    .planner-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 6px; padding: 5px 10px; border-bottom: 1px solid #1C1C21; }
+    .speed-pill { display: flex; align-items: center; gap: 4px; background: #0A0A0D; border: 1px solid #2D2D35; border-radius: 6px; padding: 2px 6px; }
+    .planner-cards { display: flex; align-items: center; gap: 8px; padding: 8px 10px; overflow-x: auto; height: 106px; background: #030305; }
+    .wp-card { min-width: 170px; height: 86px; background: #0F0F14; border: 1px solid #2D2D35; border-radius: 7px; padding: 7px 9px; display: flex; flex-direction: column; justify-content: space-between; }
+    .wp-empty { width: 100%; text-align: center; color: #8E8E93; font-size: 11px; }
+
+    /* MODAL POPUPS */
+    .modal-backdrop { position: fixed; inset: 0; background: rgba(0,0,0,0.78); display: none; align-items: center; justify-content: center; z-index: 9999; }
+    .modal-backdrop.open { display: flex; }
+    .modal-win { width: 440px; max-width: 92vw; background: #000000; border: 1.5px solid #FF3B30; border-radius: 6px; overflow: hidden; box-shadow: 0 16px 48px rgba(0,0,0,0.95); }
+    .modal-win.neutral { border-color: #3A3A3F; }
+    .modal-head { display: flex; align-items: center; justify-content: space-between; background: #0A0A0A; border-bottom: 1px solid #27272A; padding: 10px 14px; }
+    .modal-body { padding: 14px; font-size: 12.5px; line-height: 1.5; white-space: pre-line; }
+    .modal-badges { display: flex; gap: 14px; background: #0A0A0A; border: 1px solid #27272A; border-radius: 4px; padding: 8px 10px; margin-top: 10px; font-family: monospace; font-size: 11px; }
+    .modal-foot { display: flex; align-items: center; justify-content: flex-end; gap: 10px; background: #0A0A0A; border-top: 1px solid #27272A; padding: 10px 14px; }
+
+    /* MAP MARKERS */
+    .veh-marker { width: 28px; height: 28px; pointer-events: none; }
+    .wp-pin { background: #000; color: #FFF; border: 1.5px solid #FFF; border-radius: 50%; width: 22px; height: 22px; display: flex; align-items: center; justify-content: center; font-weight: 800; font-size: 10px; }
+  </style>
+</head>
+<body>
+  <div class="app-grid">
+    <!-- TOP HEADER -->
+    <div class="header">
+      <div class="card-pill">
+        <span class="brand">TULPAR</span>
+        <select id="transportType" onchange="onTransportTypeChange()">
+          <option value="TCP">TCP SITL</option>
+          <option value="UDP">UDP</option>
+        </select>
+        <input id="hostInput" type="text" value="10.0.2.2" style="width:92px;" placeholder="IP / Host" />
+        <input id="portInput" type="number" value="5760" style="width:58px;" />
+        <button id="connectBtn" onclick="toggleConnect()">BAĞLAN</button>
+      </div>
+
+      <div class="card-pill">
+        <span id="connDot" class="dot"></span>
+        <span style="font-weight:700;">DRONE / QUADROTOR · ARDUPILOT</span>
+        <select id="modeSelect" onchange="onModeSelectChanged()">
+          <option value="0">STABILIZE</option>
+          <option value="2">ALT_HOLD</option>
+          <option value="5">LOITER</option>
+          <option value="4">GUIDED</option>
+          <option value="3">AUTO</option>
+          <option value="6">RTL</option>
+          <option value="9">LAND</option>
+          <option value="16">POSHOLD</option>
+        </select>
+        <span id="armHeaderBadge" style="color:#8E8E93;font-weight:800;">● DISARMED</span>
+      </div>
+
+      <div class="card-pill">
+        <span>BAT <b id="batHeader">12.6V · 100%</b></span>
+        <span>GPS <b id="gpsHeader">RTK FIX · 10 UYDU</b></span>
+        <span id="freshHeader" style="color:#34C759;border:1px solid #34C759;border-radius:10px;padding:1px 6px;font-size:9.5px;">VERİ: 0.0 SN</span>
+      </div>
+
+      <button onclick="openSettingsModal()">⚙ AYARLAR</button>
+    </div>
+
+    <!-- MAIN WORKSPACE -->
+    <div class="workspace" id="workspaceGrid">
+      <!-- LEFT SIDEBAR -->
+      <div class="sidebar" id="leftSidebar">
+        <div class="hud-box">
+          <canvas id="hudCanvas" width="290" height="155"></canvas>
+        </div>
+        <div class="tabs">
+          <button class="tab-btn" onclick="switchTab('tele', this)">TELEMETRİ</button>
+          <button class="tab-btn" onclick="switchTab('health', this)">SAĞLIK</button>
+          <button class="tab-btn active" onclick="switchTab('cmd', this)">KOMUT</button>
+        </div>
+        <div class="tab-body">
+          <!-- KOMUT TAB -->
+          <div id="tab-cmd">
+            <div class="panel-box">
+              <div class="panel-title"><span>PRE-FLIGHT HAZIRBULUNUŞLUK</span><span style="color:#34C759;">UÇUŞA HAZIR (5/5)</span></div>
+              <div class="kv-row"><span>● BAĞLANTI</span><span id="pfConn">SYS #1 çevrimiçi</span></div>
+              <div class="kv-row"><span>● GPS 3D FIX</span><span id="pfGps">RTK FIX · 10 uydu</span></div>
+              <div class="kv-row"><span>● BATARYA</span><span id="pfBat">12.6V · 100%</span></div>
+              <div class="kv-row"><span>● HOME NOKTASI</span><span id="pfHome">39.93340, 32.85970</span></div>
+              <div class="kv-row"><span>● EKF / SENSÖR</span><span>EKF &amp; sensörler sağlıklı</span></div>
+            </div>
+
+            <div class="panel-box">
+              <div class="panel-title"><span>UÇUŞ EMNİYET KOMUTLARI (ÇİFT ONAYLI)</span></div>
+              <button id="armBtn" class="btn-danger" style="width:100%;padding:7px;margin-bottom:7px;" onclick="requestArmOrDisarm()">ARM ET (GÜVENLİK ONAYLI)</button>
+
+              <div class="input-row">
+                <span style="font-size:9.5px;color:#8E8E93;">İRTİFA(M):</span>
+                <input id="takeoffAltInput" type="number" value="15" min="1" max="500" />
+                <button onclick="requestTakeoff()">KALKIŞ (TAKEOFF)</button>
+              </div>
+
+              <div class="grid-2">
+                <button class="btn-green" onclick="requestStartMission()">▶ GÖREVİ BAŞLAT</button>
+                <button class="btn-amber" onclick="requestHold()">⏸ GÖREVİ DURDUR</button>
+              </div>
+
+              <div class="grid-2">
+                <button onclick="requestLand()">İNİŞ (LAND)</button>
+                <button class="btn-danger" onclick="requestRtl()">↩ EVE DÖN (RTL)</button>
+              </div>
+
+              <button style="width:100%;padding:6px;" onclick="setHomeCurrent()">HOME GÜNCELLE</button>
+            </div>
+
+            <div class="panel-box">
+              <div class="panel-title"><span>FAYDALI YÜK / SERVO (DO_SET_SERVO)</span></div>
+              <div class="grid-2">
+                <div>
+                  <div style="font-size:9px;color:#8E8E93;margin-bottom:2px;">KANAL (1..16)</div>
+                  <input id="servoCh" type="number" value="9" style="width:100%;" />
+                </div>
+                <div>
+                  <div style="font-size:9px;color:#8E8E93;margin-bottom:2px;">PWM (US)</div>
+                  <input id="servoPwm" type="number" value="1500" style="width:100%;" />
+                </div>
+              </div>
+              <button style="width:100%;padding:6px;" onclick="triggerServo()">SERVO TETİKLE</button>
+            </div>
+          </div>
+
+          <!-- TELEMETRİ TAB -->
+          <div id="tab-tele" style="display:none;">
+            <div class="panel-box">
+              <div class="panel-title"><span>CANLI UÇUŞ VERİLERİ</span></div>
+              <div class="kv-row"><span>İRTİFA (REL)</span><b id="tAltRel">0.0 m</b></div>
+              <div class="kv-row"><span>YER HIZI (GS)</span><b id="tGs">0.0 m/s</b></div>
+              <div class="kv-row"><span>DİKEY HIZ (VS)</span><b id="tVs">0.0 m/s</b></div>
+              <div class="kv-row"><span>ROLL / PITCH</span><b id="tAtt">0.0° / 0.0°</b></div>
+              <div class="kv-row"><span>BAŞLIK (YAW)</span><b id="tYaw">0°</b></div>
+              <div class="kv-row"><span>KONUM</span><b id="tPos">39.933400, 32.859700</b></div>
+            </div>
+          </div>
+
+          <!-- SAĞLIK TAB -->
+          <div id="tab-health" style="display:none;">
+            <div class="panel-box">
+              <div class="panel-title"><span>ALT SİSTEM SAĞLIĞI</span></div>
+              <div class="kv-row"><span>GYRO / ACCEL</span><b style="color:#34C759;">OK</b></div>
+              <div class="kv-row"><span>MAGNETOMETER</span><b style="color:#34C759;">OK</b></div>
+              <div class="kv-row"><span>BAROMETER</span><b style="color:#34C759;">OK</b></div>
+              <div class="kv-row"><span>GPS KİLİDİ</span><b style="color:#34C759;">3D RTK FIX</b></div>
+              <div class="kv-row"><span>MOTOR ÇIKIŞLARI</span><b style="color:#34C759;">HAZIR</b></div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- CENTER MAP STAGE -->
+      <div class="stage">
+        <div class="stage-bar">
+          <div style="display:flex;align-items:center;gap:8px;">
+            <span style="font-size:9.5px;color:#8E8E93;font-weight:700;">HARİTA</span>
+            <select id="layerSelect" onchange="onLayerSelectChanged()">
+              <option value="google-satellite-hd">UYDU HD (GOOGLE 2X)</option>
+              <option value="google-hybrid-hd">HİBRİT HD (GOOGLE 2X)</option>
+              <option value="esri-clarity">UYDU NETLİK (ESRI CLARITY)</option>
+              <option value="satellite">UYDU (ESRI)</option>
+              <option value="google-street-hd">HARİTA HD (GOOGLE 2X)</option>
+              <option value="street">SOKAK (OSM)</option>
+              <option value="topo">TOPOGRAFİK (OPENTOPOMAP)</option>
+            </select>
+            <button id="followBtn" onclick="toggleFollowVehicle()">ARAÇ TAKİP: KAPALI</button>
+          </div>
+          <button onclick="centerOnVehicle()">MERKEZLE</button>
+        </div>
+        <div id="map"></div>
+        <div class="map-coords" id="mapCoordsBadge">İZLEME  39.933400, 32.859700 · 0.0M</div>
+      </div>
+
+      <!-- RIGHT DOCK -->
+      <div class="right-dock">
+        <div class="cam-box">
+          <div style="color:#FFF;font-weight:700;margin-bottom:4px;">SİNYAL BEKLENİYOR / KAMERA SEÇ</div>
+          <div style="font-size:9.5px;">RTSP · UDP/RTP · USB</div>
+          <div style="font-size:9.5px;margin-top:4px;">Ayarlar menüsünden yapılandırın</div>
+        </div>
+        <div class="log-box">
+          <div class="panel-title"><span>CANLI GÜNLÜK</span><span id="logCount">1 KAYIT</span></div>
+          <div class="log-list" id="logList"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- BOTTOM MISSION PLANNER -->
+    <div class="planner">
+      <div class="planner-head">
+        <div style="display:flex;align-items:center;gap:10px;">
+          <b style="letter-spacing:0.8px;">GÖREV PLANLAYICI</b>
+          <span id="wpCountLabel" style="color:#8E8E93;">0 WAYPOINT</span>
+          <span id="wpMetricsLabel" style="color:#38BDF8;">0 M · -- · MAX 0M</span>
+        </div>
+        <button onclick="togglePlannerDrawer()" id="drawerToggleBtn">DARALT</button>
+      </div>
+      <div id="plannerBody">
+        <div class="planner-bar">
+          <button id="pickWpBtn" onclick="toggleMapPickMode()">HARİTADAN EKLE</button>
+          <button onclick="addManualWaypoint()">+ WP EKLE</button>
+          <button onclick="uploadMissionToVehicle()">ARACA YÜKLE</button>
+          <button class="btn-green" onclick="requestStartMission()">▶ BAŞLAT</button>
+          <button class="btn-amber" onclick="requestHold()">⏸ DURDUR</button>
+          <div class="speed-pill">
+            <span style="font-size:9.5px;color:#8E8E93;font-weight:700;">HIZ:</span>
+            <input id="cruiseSpeedInput" type="number" value="3" min="0.5" max="50" step="0.5" style="width:44px;text-align:center;" onchange="recalcMetrics()" />
+            <span style="font-size:9.5px;color:#8E8E93;">m/s</span>
+            <button onclick="applyCruiseSpeed()" style="padding:2px 8px;font-size:9.5px;">UYGULA</button>
+          </div>
+          <button class="btn-danger" onclick="clearMission()">TEMİZLE</button>
+        </div>
+        <div class="planner-cards" id="wpCardsHost">
+          <div class="wp-empty">GÖREV ROTASI HENÜZ BOŞ — HARİTADAN EKLE'ye tıklayıp haritaya dokunun veya + WP EKLE ile nokta oluşturun.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SAFETY CONFIRMATION MODAL POPUP -->
+  <div class="modal-backdrop" id="safetyModal">
+    <div class="modal-win">
+      <div class="modal-head">
+        <div style="display:flex;align-items:center;gap:8px;">
+          <span style="background:#FF3B30;color:#FFF;font-weight:800;font-size:9.5px;padding:2px 6px;border-radius:3px;">ONAY</span>
+          <b id="safetyTitle" style="color:#FF3B30;font-size:12.5px;">GÜVENLİK ONAYI GEREKLİ</b>
+        </div>
+        <button onclick="closeSafetyModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div id="safetyDesc"></div>
+        <div class="modal-badges">
+          <span>MOD: <b id="safetyModeBadge">STABILIZE</b></span>
+          <span>DURUM: <b id="safetyArmBadge" style="color:#FF3B30;">DISARMED</b></span>
+          <span id="safetyAltWrap" style="display:none;">HEDEF: <b id="safetyAltBadge" style="color:#34C759;">15.0 M</b></span>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button onclick="closeSafetyModal()">İPTAL ET</button>
+        <button class="btn-danger" onclick="confirmSafetyModal()">ONAYLA VE GÖNDER</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS MODAL POPUP -->
+  <div class="modal-backdrop" id="settingsModal">
+    <div class="modal-win neutral">
+      <div class="modal-head">
+        <b>⚙ KOKPİT, KAMERA &amp; HARİTA AYARLARI</b>
+        <button onclick="closeSettingsModal()">✕</button>
+      </div>
+      <div class="modal-body">
+        <div class="panel-box">
+          <div class="panel-title"><span>GÖRÜNÜM &amp; GUIDED İRTİFA</span></div>
+          <div class="kv-row">
+            <span>Sol Telemetri / Komut Paneli</span>
+            <button onclick="toggleLeftSidebar()">GÖSTER / GİZLE</button>
+          </div>
+          <div class="kv-row" style="margin-top:6px;">
+            <span>Varsayılan Guided İrtifa (m)</span>
+            <input id="guidedAltInput" type="number" value="30" style="width:70px;" />
+          </div>
+        </div>
+        <div class="panel-box">
+          <div class="panel-title"><span>KAMERA KAYNAĞI (RTSP / UDP)</span></div>
+          <input type="text" value="udp://@0.0.0.0:5600" style="width:100%;margin-bottom:6px;" />
+          <div style="font-size:10px;color:#8E8E93;">Harita katmanı olarak 2× HiDPI Google Uydu HD (Zoom 21) aktif.</div>
+        </div>
+      </div>
+      <div class="modal-foot">
+        <button onclick="closeSettingsModal()">KAPAT</button>
+      </div>
+    </div>
+  </div>
+
+  <script src="./maplibre-gl.js"></script>
+  <script>
+    const LAYERS = {
+      'google-satellite-hd': { tiles: ['https://mt1.google.com/vt/lyrs=s&scale=2&x={x}&y={y}&z={z}'], maxzoom: 21 },
+      'google-hybrid-hd':    { tiles: ['https://mt1.google.com/vt/lyrs=y&scale=2&x={x}&y={y}&z={z}'], maxzoom: 21 },
+      'esri-clarity':        { tiles: ['https://clarity.maptiles.arcgis.com/arcgis/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], maxzoom: 19 },
+      'satellite':           { tiles: ['https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}'], maxzoom: 19 },
+      'google-street-hd':    { tiles: ['https://mt1.google.com/vt/lyrs=m&scale=2&x={x}&y={y}&z={z}'], maxzoom: 21 },
+      'street':              { tiles: ['https://tile.openstreetmap.org/{z}/{x}/{y}.png'], maxzoom: 19 },
+      'topo':                { tiles: ['https://tile.opentopomap.org/{z}/{x}/{y}.png'], maxzoom: 17 }
+    };
+
+    let state = {
+      connected: false,
+      armed: false,
+      modeName: 'STABILIZE',
+      lat: 39.933400,
+      lon: 32.859700,
+      altRel: 0.0,
+      groundSpeed: 0.0,
+      climbRate: 0.0,
+      rollDeg: 0.0,
+      pitchDeg: 0.0,
+      yawDeg: 356.0,
+      batteryVolts: 12.6,
+      batteryPct: 100,
+      satellites: 10,
+      ageSec: 0.0
+    };
+
+    let followVehicle = false;
+    let mapPickMode = false;
+    let missionItems = [];
+    let pendingSafety = null;
+    let logs = [];
+
+    // Initialize MapLibre with HD Google 2x Satellite up to zoom 21
+    const map = new maplibregl.Map({
+      container: 'map',
+      center: [state.lon, state.lat],
+      zoom: 17,
+      maxZoom: 22,
+      attributionControl: false,
+      dragRotate: false,
+      style: {
+        version: 8,
+        sources: {
+          'basemap-tiles': {
+            type: 'raster',
+            tiles: LAYERS['google-satellite-hd'].tiles,
+            tileSize: 256,
+            minzoom: 0,
+            maxzoom: 21
+          }
+        },
+        layers: [
+          { id: 'bg', type: 'background', paint: { 'background-color': '#000' } },
+          { id: 'basemap-layer', type: 'raster', source: 'basemap-tiles', paint: { 'raster-fade-duration': 100 } }
+        ]
+      }
+    });
+
+    const vehEl = document.createElement('div');
+    vehEl.className = 'veh-marker';
+    vehEl.innerHTML = '<svg viewBox="0 0 32 32"><polygon points="16,3 26,27 16,21 6,27" fill="#ffffff" stroke="#000000" stroke-width="1.8"/></svg>';
+    const vehicleMarker = new maplibregl.Marker({ element: vehEl }).setLngLat([state.lon, state.lat]).addTo(map);
+    let wpMarkers = [];
+
+    map.on('load', () => {
+      map.addSource('route-src', { type: 'geojson', data: { type: 'FeatureCollection', features: [] } });
+      map.addLayer({
+        id: 'route-line',
+        type: 'line',
+        source: 'route-src',
+        paint: { 'line-color': '#ffffff', 'line-width': 2.2 }
+      });
+    });
+
+    map.on('click', (e) => {
+      if (!mapPickMode) return;
+      addWaypointAt(e.lngLat.lat, e.lngLat.lng);
+    });
+
+    function onLayerSelectChanged() {
+      const id = document.getElementById('layerSelect').value;
+      const cfg = LAYERS[id] || LAYERS['google-satellite-hd'];
+      if (map.getLayer('basemap-layer')) map.removeLayer('basemap-layer');
+      if (map.getSource('basemap-tiles')) map.removeSource('basemap-tiles');
+      map.addSource('basemap-tiles', {
+        type: 'raster',
+        tiles: cfg.tiles,
+        tileSize: 256,
+        minzoom: 0,
+        maxzoom: cfg.maxzoom
+      });
+      const before = map.getLayer('route-line') ? 'route-line' : undefined;
+      map.addLayer({ id: 'basemap-layer', type: 'raster', source: 'basemap-tiles', paint: { 'raster-fade-duration': 100 } }, before);
+    }
+
+    function toggleFollowVehicle() {
+      followVehicle = !followVehicle;
+      const btn = document.getElementById('followBtn');
+      if (followVehicle) {
+        btn.textContent = '● ARAÇ TAKİP: AÇIK';
+        btn.classList.add('btn-active');
+        centerOnVehicle();
+      } else {
+        btn.textContent = 'ARAÇ TAKİP: KAPALI';
+        btn.classList.remove('btn-active');
+      }
+    }
+
+    function centerOnVehicle() {
+      map.easeTo({ center: [state.lon, state.lat], duration: 350 });
+    }
+
+    function onTransportTypeChange() {
+      const t = document.getElementById('transportType').value;
+      const hostEl = document.getElementById('hostInput');
+      const portEl = document.getElementById('portInput');
+      if (t === 'UDP') {
+        hostEl.style.display = 'none';
+        portEl.value = '14550';
+      } else {
+        hostEl.style.display = '';
+        portEl.value = '5760';
+      }
+    }
+
+    function toggleConnect() {
+      if (state.connected) {
+        if (window.TulparNative) window.TulparNative.disconnect();
+        state.connected = false;
+        updateConnectionUi();
+        return;
+      }
+      const t = document.getElementById('transportType').value;
+      const host = document.getElementById('hostInput').value.trim() || '127.0.0.1';
+      const port = parseInt(document.getElementById('portInput').value, 10) || 5760;
+      if (window.TulparNative) {
+        if (t === 'UDP') window.TulparNative.connectUdp(port);
+        else window.TulparNative.connectTcp(host, port);
+      } else {
+        state.connected = true;
+        appendLog('NOTICE', 'BAĞLANTI', 'Simülasyon bağlantısı aktif: ' + host + ':' + port);
+        updateConnectionUi();
+      }
+    }
+
+    function updateConnectionUi() {
+      document.getElementById('connectBtn').textContent = state.connected ? 'KES' : 'BAĞLAN';
+    }
+
+    function onModeSelectChanged() {
+      const sel = document.getElementById('modeSelect');
+      const cm = parseInt(sel.value, 10);
+      const name = sel.options[sel.selectedIndex].text;
+      state.modeName = name;
+      if (window.TulparNative) window.TulparNative.setFlightMode(cm, name);
+      else appendLog('INFO', 'MOD', 'Uçuş modu talebi: ' + name);
+    }
+
+    // SAFETY MODAL CONFIRMATION POPUP
+    function openSafetyModal(kind, title, desc, pA = 0, pB = 0, pC = 0) {
+      pendingSafety = { kind, pA, pB, pC };
+      document.getElementById('safetyTitle').textContent = title;
+      document.getElementById('safetyDesc').textContent = desc;
+      document.getElementById('safetyModeBadge').textContent = state.modeName;
+      const armB = document.getElementById('safetyArmBadge');
+      armB.textContent = state.armed ? 'ARMED' : 'DISARMED';
+      armB.style.color = state.armed ? '#34C759' : '#FF3B30';
+      const altWrap = document.getElementById('safetyAltWrap');
+      if (kind === 'Takeoff' && pA > 0) {
+        altWrap.style.display = '';
+        document.getElementById('safetyAltBadge').textContent = pA.toFixed(1) + ' M';
+      } else {
+        altWrap.style.display = 'none';
+      }
+      document.getElementById('safetyModal').classList.add('open');
+    }
+
+    function closeSafetyModal() {
+      pendingSafety = null;
+      document.getElementById('safetyModal').classList.remove('open');
+    }
+
+    function confirmSafetyModal() {
+      if (!pendingSafety) return;
+      const act = pendingSafety;
+      closeSafetyModal();
+      if (window.TulparNative) {
+        window.TulparNative.sendSafetyCommand(act.kind, act.pA, act.pB, act.pC);
+      } else {
+        if (act.kind === 'Arm') state.armed = true;
+        if (act.kind === 'Disarm') state.armed = false;
+        if (act.kind === 'Takeoff') { state.modeName = 'GUIDED'; state.altRel = act.pA; }
+        if (act.kind === 'StartMission') state.modeName = 'AUTO';
+        if (act.kind === 'Hold') state.modeName = 'LOITER';
+        if (act.kind === 'Rtl') state.modeName = 'RTL';
+        if (act.kind === 'Land') state.modeName = 'LAND';
+        appendLog('NOTICE', 'KOMUT', 'Onaylı komut gönderildi: ' + act.kind);
+        renderTelemetry();
+      }
+    }
+
+    function requestArmOrDisarm() {
+      if (state.armed) {
+        openSafetyModal('Disarm', 'DISARM ONAYI GEREKLİ', 'Motorları durdurmak (DISARM) için onaylayın. Havada DISARM tehlikelidir!');
+      } else {
+        openSafetyModal('Arm', 'ARM ONAYI GEREKLİ', 'Pervane/motorlara güç vermek (ARM) için onaylayın. Çevrenin güvenli olduğundan emin olun.');
+      }
+    }
+
+    function requestTakeoff() {
+      const alt = Math.max(1, parseFloat(document.getElementById('takeoffAltInput').value) || 15);
+      let desc = 'Araç ' + alt.toFixed(1) + ' M hedef irtifaya kalkış (TAKEOFF) yapacak. Onaylıyor musunuz?';
+      if (state.modeName !== 'GUIDED') {
+        desc += '\nℹ Uçuş modu şu an ' + state.modeName + '; onaylandığında önce GUIDED moduna geçirilecektir.';
+      }
+      if (!state.armed) {
+        desc += '\n⚠ DİKKAT: Araç şu an DISARMED durumda. Otonom kalkış için aracın ARM edilmiş olması gerekir.';
+      }
+      openSafetyModal('Takeoff', 'OTONOM KALKIŞ ONAYI', desc, alt);
+    }
+
+    function requestStartMission() {
+      let desc = missionItems.length > 0
+        ? 'Araç AUTO moduna alınacak ve ' + missionItems.length + ' noktalı görev (MISSION_START) başlatılacak. Onaylıyor musunuz?'
+        : 'Araç AUTO moduna alınacak ve araç hafızasındaki mevcut görev (MISSION_START) başlatılacak. Onaylıyor musunuz?';
+      if (!state.armed) {
+        desc += '\n⚠ DİKKAT: Araç şu an DISARMED durumda. Görevin uçuşa geçmesi için aracın ARM edilmiş olması gerekir.';
+      }
+      openSafetyModal('StartMission', 'OTONOM GÖREVİ BAŞLAT ONAYI', desc);
+    }
+
+    function requestHold() {
+      openSafetyModal('Hold', 'GÖREVİ DURDUR / HOLD ONAYI', 'Aktif görev durdurulacak ve araç mevcut konumunda bekleme (HOLD / LOITER) moduna geçirilecek. Onaylıyor musunuz?');
+    }
+
+    function requestRtl() {
+      openSafetyModal('Rtl', 'ACİL RTL ONAYI', 'Araç kalkış noktasına dönüş (RETURN TO LAUNCH) moduna geçirilecek. Onaylıyor musunuz?');
+    }
+
+    function requestLand() {
+      openSafetyModal('Land', 'OTONOM İNİŞ ONAYI', 'Araç bulunduğu konuma iniş (LAND) başlatacak. Onaylıyor musunuz?');
+    }
+
+    function applyCruiseSpeed() {
+      const spd = Math.max(0.5, parseFloat(document.getElementById('cruiseSpeedInput').value) || 3.0);
+      recalcMetrics();
+      if (window.TulparNative) window.TulparNative.setCruiseSpeed(spd);
+      else appendLog('INFO', 'HIZ', 'Görev / uçuş hızı gönderildi: ' + spd.toFixed(1) + ' m/s');
+    }
+
+    function triggerServo() {
+      const ch = parseInt(document.getElementById('servoCh').value, 10) || 9;
+      const pwm = parseInt(document.getElementById('servoPwm').value, 10) || 1500;
+      if (window.TulparNative) window.TulparNative.triggerServo(ch, pwm);
+      else appendLog('INFO', 'SERVO', 'DO_SET_SERVO CH' + ch + ' -> ' + pwm + ' us');
+    }
+
+    function setHomeCurrent() {
+      if (window.TulparNative) window.TulparNative.setHomeCurrent();
+      else appendLog('INFO', 'HOME', 'Home noktası mevcut araç konumu olarak güncellendi.');
+    }
+
+    // MISSION PLANNER
+    function toggleMapPickMode() {
+      mapPickMode = !mapPickMode;
+      const btn = document.getElementById('pickWpBtn');
+      if (mapPickMode) btn.classList.add('btn-active');
+      else btn.classList.remove('btn-active');
+    }
+
+    function addManualWaypoint() {
+      const offset = (missionItems.length + 1) * 0.00035;
+      addWaypointAt(state.lat + offset, state.lon + offset);
+    }
+
+    function addWaypointAt(lat, lon) {
+      missionItems.push({ seq: missionItems.length + 1, cmd: 16, lat, lon, alt: 25 });
+      renderMission();
+    }
+
+    function removeWaypoint(idx) {
+      missionItems.splice(idx, 1);
+      missionItems.forEach((w, i) => w.seq = i + 1);
+      renderMission();
+    }
+
+    function clearMission() {
+      missionItems = [];
+      renderMission();
+      if (window.TulparNative) window.TulparNative.clearMissionOnVehicle();
+      else appendLog('NOTICE', 'GÖREV', 'Araç üzerindeki görev temizlendi.');
+    }
+
+    function uploadMissionToVehicle() {
+      if (window.TulparNative) window.TulparNative.uploadMission(JSON.stringify(missionItems));
+      else appendLog('NOTICE', 'GÖREV', missionItems.length + ' waypoint araca yüklendi.');
+    }
+
+    function haversineMeters(lat1, lon1, lat2, lon2) {
+      const R = 6371000;
+      const dLat = (lat2 - lat1) * Math.PI / 180;
+      const dLon = (lon2 - lon1) * Math.PI / 180;
+      const a = Math.sin(dLat/2)**2 + Math.cos(lat1*Math.PI/180)*Math.cos(lat2*Math.PI/180)*Math.sin(dLon/2)**2;
+      return 2 * R * Math.atan2(Math.sqrt(a), Math.sqrt(1 - a));
+    }
+
+    function recalcMetrics() {
+      let dist = 0;
+      let maxAlt = 0;
+      for (let i = 0; i < missionItems.length; i++) {
+        if (missionItems[i].alt > maxAlt) maxAlt = missionItems[i].alt;
+        if (i > 0) dist += haversineMeters(missionItems[i-1].lat, missionItems[i-1].lon, missionItems[i].lat, missionItems[i].lon);
+      }
+      const spd = Math.max(0.5, parseFloat(document.getElementById('cruiseSpeedInput').value) || 3.0);
+      const sec = Math.round(dist / spd);
+      const durTxt = dist > 0 ? (Math.floor(sec / 60) + 'DK ' + (sec % 60) + 'SN') : '--';
+      document.getElementById('wpCountLabel').textContent = missionItems.length + ' WAYPOINT';
+      document.getElementById('wpMetricsLabel').textContent = Math.round(dist) + ' M · ' + durTxt + ' · MAX ' + Math.round(maxAlt) + 'M';
+    }
+
+    function renderMission() {
+      wpMarkers.forEach(m => m.remove());
+      wpMarkers = [];
+      const coords = [];
+      const host = document.getElementById('wpCardsHost');
+      host.innerHTML = '';
+
+      if (missionItems.length === 0) {
+        host.innerHTML = '<div class="wp-empty">GÖREV ROTASI HENÜZ BOŞ — HARİTADAN EKLE\'ye tıklayıp haritaya dokunun veya + WP EKLE ile nokta oluşturun.</div>';
+      } else {
+        missionItems.forEach((w, idx) => {
+          coords.push([w.lon, w.lat]);
+          const el = document.createElement('div');
+          el.className = 'wp-pin';
+          el.textContent = w.seq;
+          wpMarkers.push(new maplibregl.Marker({ element: el }).setLngLat([w.lon, w.lat]).addTo(map));
+
+          const card = document.createElement('div');
+          card.className = 'wp-card';
+          card.innerHTML =
+            '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<b>#' + w.seq + ' WAYPOINT</b>' +
+              '<button onclick="removeWaypoint(' + idx + ')" style="padding:1px 6px;font-size:9px;" class="btn-danger">✕</button>' +
+            '</div>' +
+            '<div style="font-family:monospace;font-size:10px;color:#8E8E93;">' + w.lat.toFixed(5) + ', ' + w.lon.toFixed(5) + '</div>' +
+            '<div style="display:flex;justify-content:space-between;align-items:center;">' +
+              '<span style="color:#34C759;font-weight:700;">İRTİFA: ' + w.alt + ' M</span>' +
+              '<span style="font-size:9px;color:#8E8E93;">REL</span>' +
+            '</div>';
+          host.appendChild(card);
+        });
+      }
+
+      if (map.getSource('route-src')) {
+        map.getSource('route-src').setData({
+          type: 'FeatureCollection',
+          features: coords.length > 1 ? [{ type: 'Feature', geometry: { type: 'LineString', coordinates: coords } }] : []
+        });
+      }
+      recalcMetrics();
+    }
+
+    function togglePlannerDrawer() {
+      const b = document.getElementById('plannerBody');
+      const btn = document.getElementById('drawerToggleBtn');
+      if (b.style.display === 'none') {
+        b.style.display = '';
+        btn.textContent = 'DARALT';
+      } else {
+        b.style.display = 'none';
+        btn.textContent = 'GENİŞLET';
+      }
+      setTimeout(() => map.resize(), 50);
+    }
+
+    function switchTab(id, btn) {
+      document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+      btn.classList.add('active');
+      document.getElementById('tab-cmd').style.display = id === 'cmd' ? '' : 'none';
+      document.getElementById('tab-tele').style.display = id === 'tele' ? '' : 'none';
+      document.getElementById('tab-health').style.display = id === 'health' ? '' : 'none';
+    }
+
+    function openSettingsModal() { document.getElementById('settingsModal').classList.add('open'); }
+    function closeSettingsModal() { document.getElementById('settingsModal').classList.remove('open'); }
+    function toggleLeftSidebar() {
+      const sb = document.getElementById('leftSidebar');
+      const wg = document.getElementById('workspaceGrid');
+      if (sb.style.display === 'none') {
+        sb.style.display = '';
+        wg.style.gridTemplateColumns = '';
+      } else {
+        sb.style.display = 'none';
+        wg.style.gridTemplateColumns = '1fr';
+      }
+      setTimeout(() => map.resize(), 50);
+    }
+
+    function appendLog(severity, tag, text) {
+      const now = new Date();
+      const ts = now.toTimeString().split(' ')[0];
+      logs.unshift({ ts, severity, tag, text });
+      if (logs.length > 60) logs.pop();
+      const list = document.getElementById('logList');
+      list.innerHTML = logs.map(l =>
+        '<div class="log-item ' + (l.severity === 'WARNING' ? 'WARN' : (l.severity === 'NOTICE' ? 'NOTICE' : '')) + '">' +
+        '[' + l.ts + '] [' + l.severity + '] ' + l.tag + ': ' + l.text + '</div>'
+      ).join('');
+      document.getElementById('logCount').textContent = logs.length + ' KAYIT';
+    }
+
+    function drawHud() {
+      const c = document.getElementById('hudCanvas');
+      const ctx = c.getContext('2d');
+      const w = c.width, h = c.height;
+      ctx.fillStyle = '#000000';
+      ctx.fillRect(0, 0, w, h);
+
+      ctx.save();
+      ctx.translate(w / 2, h / 2);
+      ctx.rotate(-state.rollDeg * Math.PI / 180);
+      const pitchPx = state.pitchDeg * 2.2;
+
+      // Horizon line & pitch ladder
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.2;
+      ctx.beginPath();
+      ctx.moveTo(-70, pitchPx);
+      ctx.lineTo(70, pitchPx);
+      ctx.stroke();
+
+      for (let p = -20; p <= 20; p += 10) {
+        if (p === 0) continue;
+        const y = pitchPx - p * 2.2;
+        ctx.beginPath();
+        ctx.moveTo(-22, y); ctx.lineTo(-8, y);
+        ctx.moveTo(8, y); ctx.lineTo(22, y);
+        ctx.stroke();
+      }
+      ctx.restore();
+
+      // Center reticle
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1.6;
+      ctx.beginPath();
+      ctx.moveTo(w/2 - 18, h/2); ctx.lineTo(w/2 - 6, h/2); ctx.lineTo(w/2, h/2 + 5); ctx.lineTo(w/2 + 6, h/2); ctx.lineTo(w/2 + 18, h/2);
+      ctx.stroke();
+
+      // Side boxes (GS & ALT)
+      ctx.fillStyle = '#0A0A0A';
+      ctx.strokeStyle = '#FFFFFF';
+      ctx.lineWidth = 1;
+      ctx.fillRect(6, h/2 - 12, 44, 24);
+      ctx.strokeRect(6, h/2 - 12, 44, 24);
+      ctx.fillRect(w - 50, h/2 - 12, 44, 24);
+      ctx.strokeRect(w - 50, h/2 - 12, 44, 24);
+
+      ctx.fillStyle = '#FFFFFF';
+      ctx.font = 'bold 10px monospace';
+      ctx.fillText(state.groundSpeed.toFixed(1), 12, h/2 + 4);
+      ctx.fillText(state.altRel.toFixed(1) + 'm', w - 45, h/2 + 4);
+      ctx.fillText(Math.round(state.yawDeg) + '°', w/2 - 12, 16);
+      ctx.fillText(state.modeName, w - 65, 16);
+    }
+
+    function renderTelemetry() {
+      updateConnectionUi();
+      const armHeader = document.getElementById('armHeaderBadge');
+      armHeader.textContent = state.armed ? '● ARMED' : '● DISARMED';
+      armHeader.style.color = state.armed ? '#FF3B30' : '#8E8E93';
+
+      const armBtn = document.getElementById('armBtn');
+      armBtn.textContent = state.armed ? 'DISARM ET (MOTOR DURDUR)' : 'ARM ET (GÜVENLİK ONAYLI)';
+
+      document.getElementById('batHeader').textContent = state.batteryVolts.toFixed(1) + 'V · ' + state.batteryPct + '%';
+      document.getElementById('gpsHeader').textContent = 'RTK FIX · ' + state.satellites + ' UYDU';
+      document.getElementById('tAltRel').textContent = state.altRel.toFixed(1) + ' m';
+      document.getElementById('tGs').textContent = state.groundSpeed.toFixed(1) + ' m/s';
+      document.getElementById('tVs').textContent = state.climbRate.toFixed(1) + ' m/s';
+      document.getElementById('tAtt').textContent = state.rollDeg.toFixed(1) + '° / ' + state.pitchDeg.toFixed(1) + '°';
+      document.getElementById('tYaw').textContent = Math.round(state.yawDeg) + '°';
+      document.getElementById('tPos').textContent = state.lat.toFixed(6) + ', ' + state.lon.toFixed(6);
+      document.getElementById('mapCoordsBadge').textContent =
+        (mapPickMode ? 'GÖREV EKLEME  ' : 'İZLEME  ') + state.lat.toFixed(6) + ', ' + state.lon.toFixed(6) + ' · ' + state.altRel.toFixed(1) + 'M';
+
+      vehicleMarker.setLngLat([state.lon, state.lat]);
+      vehEl.style.transform += '';
+      const svg = vehEl.querySelector('svg');
+      if (svg) svg.style.transform = 'rotate(' + state.yawDeg + 'deg)';
+      if (followVehicle) centerOnVehicle();
+      drawHud();
+    }
+
+    window.onNativeTelemetry = function(t) {
+      state = Object.assign(state, t);
+      renderTelemetry();
+    };
+
+    window.onNativeLog = function(l) {
+      appendLog(l.severity || 'INFO', l.tag || 'SİSTEM', l.text || '');
+    };
+
+    appendLog('INFO', 'SİSTEM', 'TULPAR Mission Planner Android kokpiti hazır (2x HD Uydu + MAVLink v2).');
+    renderTelemetry();
+  </script>
+</body>
+</html>

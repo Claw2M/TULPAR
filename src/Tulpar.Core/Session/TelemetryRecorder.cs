@@ -12,17 +12,28 @@ public sealed class TelemetryRecorder : IDisposable
 {
     private const string CsvHeader =
         "TimestampUtc,Vehicle,Mode,Armed,Lat,Lon,AltRelM,AirspeedMps,GroundspeedMps,HeadingDeg,RollDeg,PitchDeg,BatVolts,BatPct,GpsFix,Sats";
+    private const int AutoFlushWriteThreshold = 50;
+    private static readonly TimeSpan AutoFlushTimeThreshold = TimeSpan.FromSeconds(2);
 
     private static readonly Encoding Utf8NoBom = new UTF8Encoding(encoderShouldEmitUTF8Identifier: false);
 
     private readonly Lock _sync = new();
+    private readonly TimeProvider _timeProvider;
     private readonly FileStream _tlogStream;
     private readonly StreamWriter _csvWriter;
+    private int _writesSinceFlush;
+    private long _lastFlushTimestamp;
     private bool _disposed;
 
     public TelemetryRecorder(string logDirectory)
+        : this(logDirectory, TimeProvider.System)
+    {
+    }
+
+    public TelemetryRecorder(string logDirectory, TimeProvider timeProvider)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(logDirectory);
+        _timeProvider = timeProvider ?? throw new ArgumentNullException(nameof(timeProvider));
 
         string fullDirectory = Path.GetFullPath(logDirectory);
         Directory.CreateDirectory(fullDirectory);
@@ -41,6 +52,7 @@ public sealed class TelemetryRecorder : IDisposable
             };
             _csvWriter.WriteLine(CsvHeader);
             _csvWriter.Flush();
+            _lastFlushTimestamp = _timeProvider.GetTimestamp();
         }
         catch
         {
@@ -72,6 +84,7 @@ public sealed class TelemetryRecorder : IDisposable
 
             _tlogStream.Write(timestampHeader);
             _tlogStream.Write(rawPacket);
+            MaybeAutoFlush();
         }
     }
 
@@ -99,6 +112,7 @@ public sealed class TelemetryRecorder : IDisposable
                 $"{timestampStr},{vehicleStr},{modeStr},{armedStr},{snapshot.Latitude},{snapshot.Longitude},{snapshot.AltitudeRelativeMeters},{snapshot.AirspeedMps},{snapshot.GroundspeedMps},{snapshot.HeadingDeg},{snapshot.RollDeg},{snapshot.PitchDeg},{snapshot.BatteryVoltageVolts},{snapshot.BatteryRemainingPercent},{snapshot.GpsFixType},{snapshot.SatellitesVisible}");
 
             _csvWriter.WriteLine(row);
+            MaybeAutoFlush();
         }
     }
 
@@ -107,9 +121,26 @@ public sealed class TelemetryRecorder : IDisposable
         lock (_sync)
         {
             ObjectDisposedException.ThrowIf(_disposed, this);
-            _tlogStream.Flush();
-            _csvWriter.Flush();
+            FlushCore();
         }
+    }
+
+    private void MaybeAutoFlush()
+    {
+        _writesSinceFlush++;
+        if (_writesSinceFlush >= AutoFlushWriteThreshold ||
+            _timeProvider.GetElapsedTime(_lastFlushTimestamp) >= AutoFlushTimeThreshold)
+        {
+            FlushCore();
+        }
+    }
+
+    private void FlushCore()
+    {
+        _tlogStream.Flush();
+        _csvWriter.Flush();
+        _writesSinceFlush = 0;
+        _lastFlushTimestamp = _timeProvider.GetTimestamp();
     }
 
     public void Dispose()

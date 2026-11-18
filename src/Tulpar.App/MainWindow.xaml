@@ -4,18 +4,20 @@
         xmlns:controls="clr-namespace:Tulpar.App.Controls"
         xmlns:vm="clr-namespace:Tulpar.App.ViewModels"
         Title="TULPAR MISSION PLANNER"
+        Icon="pack://application:,,,/Tulpar.App;component/Assets/Images/tulpar.ico"
         Width="1480"
         Height="900"
-        MinWidth="960"
-        MinHeight="640"
+        MinWidth="640"
+        MinHeight="360"
         WindowStartupLocation="CenterScreen"
         Background="#000000"
         Foreground="#FFFFFF"
-        FontFamily="{StaticResource UiFontFamily}">
+        FontFamily="{StaticResource UiFontFamily}"
+        TextOptions.TextFormattingMode="Display">
     <Grid>
         <Grid.RowDefinitions>
-            <!-- TOP COMMAND BAR (48px min, wraps cleanly below 1280px) -->
-            <RowDefinition Height="Auto" MinHeight="48" />
+            <!-- TOP COMMAND BAR (adapts spacing across Desktop / Tablet / Phone-Landscape) -->
+            <RowDefinition Height="Auto" MinHeight="42" />
             <!-- COCKPIT BODY -->
             <RowDefinition Height="*" />
         </Grid.RowDefinitions>
@@ -24,243 +26,361 @@
         <Border Grid.Row="0"
                 Background="#000000"
                 BorderBrush="#3A3A3F"
-                BorderThickness="0,0,0,1"
-                Padding="10,6">
+                BorderThickness="0,0,0,1">
+            <Border.Style>
+                <Style TargetType="{x:Type Border}">
+                    <Setter Property="Padding" Value="14,8" />
+                    <Style.Triggers>
+                        <DataTrigger Binding="{Binding IsTabletLayout}" Value="True">
+                            <Setter Property="Padding" Value="10,6" />
+                        </DataTrigger>
+                        <DataTrigger Binding="{Binding IsPhoneLandscapeLayout}" Value="True">
+                            <Setter Property="Padding" Value="8,4" />
+                        </DataTrigger>
+                    </Style.Triggers>
+                </Style>
+            </Border.Style>
             <Grid>
                 <Grid.ColumnDefinitions>
                     <ColumnDefinition Width="*" />
                     <ColumnDefinition Width="Auto" />
                 </Grid.ColumnDefinitions>
 
-                <!-- LEFT + CENTER WRAPPING GROUP -->
+                <!-- LEFT + CENTER WRAPPING GROUP (3 SPACIOUS CARDS) -->
                 <WrapPanel Grid.Column="0" Orientation="Horizontal" VerticalAlignment="Center">
-                    <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,10,2">
-                    <Button Content="PANEL"
-                            Command="{Binding ToggleLeftPanelCommand}"
-                            Style="{StaticResource GhostPillButtonStyle}"
+                    <!-- CARD 1: CONNECTION -->
+                    <Border Background="#0B0C10"
+                            BorderBrush="#262830"
+                            BorderThickness="1"
+                            CornerRadius="8"
                             Padding="10,5"
-                            FontSize="11"
-                            Margin="0,0,10,0" />
+                            Margin="0,3,14,3">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Image Source="pack://application:,,,/Tulpar.App;component/Assets/Images/tulpar-emblem.jpg"
+                                   Width="26"
+                                   Height="18"
+                                   Stretch="Uniform"
+                                   RenderOptions.BitmapScalingMode="HighQuality"
+                                   VerticalAlignment="Center"
+                                   Margin="0,0,6,0" />
 
-                    <TextBlock Text="TULPAR"
-                               FontFamily="{StaticResource DisplayFontFamily}"
-                               FontSize="16"
-                               FontWeight="Bold"
-                               Foreground="#FFFFFF"
-                               VerticalAlignment="Center"
-                               Margin="0,0,14,0" />
+                            <TextBlock Text="TULPAR"
+                                       FontFamily="{StaticResource DisplayFontFamily}"
+                                       FontSize="15.5"
+                                       FontWeight="Bold"
+                                       Foreground="#FFFFFF"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,12,0" />
 
-                    <ComboBox ItemsSource="{Binding ConnectionKinds}"
-                              SelectedItem="{Binding SelectedConnectionKind}"
-                              Width="96"
-                              Height="30"
-                              FontSize="11"
-                              Margin="0,0,6,0">
-                        <ComboBox.ItemTemplate>
-                            <DataTemplate>
-                                <TextBlock Text="{Binding Converter={StaticResource EnumDisplayConverter}}" />
-                            </DataTemplate>
-                        </ComboBox.ItemTemplate>
-                        <ComboBox.Style>
-                            <Style TargetType="{x:Type ComboBox}" BasedOn="{StaticResource SpaceXComboBoxStyle}">
-                                <Setter Property="IsEnabled" Value="True" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsTransportConnected}" Value="True">
-                                        <Setter Property="IsEnabled" Value="False" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </ComboBox.Style>
-                    </ComboBox>
+                            <ComboBox ItemsSource="{Binding ConnectionKinds}"
+                                      SelectedItem="{Binding SelectedConnectionKind}"
+                                      Width="98"
+                                      Height="30"
+                                      MinHeight="30"
+                                      Padding="8,2"
+                                      FontSize="11.5"
+                                      Margin="0,0,6,0">
+                                <ComboBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding Converter={StaticResource EnumDisplayConverter}}" />
+                                    </DataTemplate>
+                                </ComboBox.ItemTemplate>
+                                <ComboBox.Style>
+                                    <Style TargetType="{x:Type ComboBox}" BasedOn="{StaticResource SpaceXComboBoxStyle}">
+                                        <Setter Property="IsEnabled" Value="True" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsTransportConnected}" Value="True">
+                                                <Setter Property="IsEnabled" Value="False" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </ComboBox.Style>
+                            </ComboBox>
 
-                    <!-- SERIAL INPUTS -->
-                    <StackPanel Orientation="Horizontal"
-                                Visibility="{Binding IsSerialConnection, Converter={StaticResource BoolToVisibility}}">
-                        <ComboBox ItemsSource="{Binding AvailableSerialPorts}"
-                                  SelectedItem="{Binding SelectedSerialPort}"
-                                  Style="{StaticResource SpaceXComboBoxStyle}"
-                                  Width="92"
-                                  Height="30"
-                                  FontSize="11"
-                                  Margin="0,0,4,0" />
-                        <Button Content="YENİLE"
-                                Command="{Binding RefreshSerialPortsCommand}"
-                                Style="{StaticResource GhostPillButtonStyle}"
-                                Padding="8,4"
-                                FontSize="10"
-                                Margin="0,0,4,0" />
-                        <ComboBox ItemsSource="{Binding AvailableBaudRates}"
-                                  SelectedItem="{Binding SelectedBaudRate}"
-                                  Style="{StaticResource SpaceXComboBoxStyle}"
-                                  Width="84"
-                                  Height="30"
-                                  FontSize="11"
-                                  Margin="0,0,6,0" />
-                    </StackPanel>
+                            <!-- SERIAL INPUTS -->
+                            <StackPanel Orientation="Horizontal"
+                                        Visibility="{Binding IsSerialConnection, Converter={StaticResource BoolToVisibility}}">
+                                <ComboBox ItemsSource="{Binding AvailableSerialPorts}"
+                                          SelectedItem="{Binding SelectedSerialPort}"
+                                          DropDownOpened="OnSerialPortsDropDownOpened"
+                                          Style="{StaticResource SpaceXComboBoxStyle}"
+                                          Width="96"
+                                          Height="30"
+                                          MinHeight="30"
+                                          Padding="6,2"
+                                          FontSize="11.5"
+                                          Margin="0,0,6,0" />
+                                <ComboBox ItemsSource="{Binding AvailableBaudRates}"
+                                          SelectedItem="{Binding SelectedBaudRate}"
+                                          Style="{StaticResource SpaceXComboBoxStyle}"
+                                          Width="84"
+                                          Height="30"
+                                          MinHeight="30"
+                                          Padding="6,2"
+                                          FontSize="11.5"
+                                          Margin="0,0,6,0" />
+                            </StackPanel>
 
-                    <!-- UDP INPUT -->
-                    <StackPanel Orientation="Horizontal"
-                                Visibility="{Binding IsUdpConnection, Converter={StaticResource BoolToVisibility}}">
-                        <TextBlock Text="PORT:" Style="{StaticResource MicroCapTextStyle}" FontSize="11" VerticalAlignment="Center" Margin="0,0,4,0" />
-                        <TextBox Text="{Binding UdpListenPort, UpdateSourceTrigger=PropertyChanged}"
-                                 Style="{StaticResource SpaceXTextBoxStyle}"
-                                 Width="68"
-                                 Height="30"
-                                 FontSize="11"
-                                 Margin="0,0,6,0" />
-                    </StackPanel>
+                            <!-- UDP INPUT -->
+                            <StackPanel Orientation="Horizontal"
+                                        Visibility="{Binding IsUdpConnection, Converter={StaticResource BoolToVisibility}}">
+                                <TextBlock Text="PORT:" Style="{StaticResource MicroCapTextStyle}" FontSize="10.5" Foreground="#949CAE" VerticalAlignment="Center" Margin="0,0,6,0" />
+                                <TextBox Text="{Binding UdpListenPort, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource SpaceXTextBoxStyle}"
+                                         Width="72"
+                                         Height="30"
+                                         MinHeight="30"
+                                         Padding="7,2"
+                                         FontSize="11.5"
+                                         Margin="0,0,6,0" />
+                            </StackPanel>
 
-                    <!-- TCP INPUTS -->
-                    <StackPanel Orientation="Horizontal"
-                                Visibility="{Binding IsTcpConnection, Converter={StaticResource BoolToVisibility}}">
-                        <TextBox Text="{Binding TcpHost, UpdateSourceTrigger=PropertyChanged}"
-                                 Style="{StaticResource SpaceXTextBoxStyle}"
-                                 Width="105"
-                                 Height="30"
-                                 FontSize="11"
-                                 Margin="0,0,4,0" />
-                        <TextBox Text="{Binding TcpPort, UpdateSourceTrigger=PropertyChanged}"
-                                 Style="{StaticResource SpaceXTextBoxStyle}"
-                                 Width="60"
-                                 Height="30"
-                                 FontSize="11"
-                                 Margin="0,0,6,0" />
-                    </StackPanel>
+                            <!-- TCP INPUTS -->
+                            <StackPanel Orientation="Horizontal"
+                                        Visibility="{Binding IsTcpConnection, Converter={StaticResource BoolToVisibility}}">
+                                <TextBox Text="{Binding TcpHost, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource SpaceXTextBoxStyle}"
+                                         Width="112"
+                                         Height="30"
+                                         MinHeight="30"
+                                         Padding="7,2"
+                                         FontSize="11.5"
+                                         Margin="0,0,6,0" />
+                                <TextBox Text="{Binding TcpPort, UpdateSourceTrigger=PropertyChanged}"
+                                         Style="{StaticResource SpaceXTextBoxStyle}"
+                                         Width="66"
+                                         Height="30"
+                                         MinHeight="30"
+                                         Padding="7,2"
+                                         FontSize="11.5"
+                                         Margin="0,0,6,0" />
+                            </StackPanel>
 
-                    <Button Content="{Binding ConnectionButtonText}"
-                            Command="{Binding ConnectOrDisconnectCommand}"
-                            Style="{StaticResource GhostPillButtonStyle}"
-                            Padding="14,5"
-                            FontSize="11" />
-                </StackPanel>
+                            <Button Content="{Binding ConnectionButtonText}"
+                                    Command="{Binding ConnectOrDisconnectCommand}"
+                                    Style="{StaticResource GhostPillButtonStyle}"
+                                    MinHeight="30"
+                                    Padding="14,4"
+                                    FontSize="11" />
+                        </StackPanel>
+                    </Border>
 
-                <!-- AUTO VEHICLE BADGE + MODE + ARMED + STATUS STRIP -->
-                <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
-                    <Border Background="#0A0A0A"
-                            BorderBrush="#3A3A3F"
+                    <!-- CARD 2: VEHICLE STATE + AUTO-APPLY FLIGHT MODE SELECT + ARMED -->
+                    <Border Background="#0B0C10"
+                            BorderBrush="#262830"
                             BorderThickness="1"
-                            CornerRadius="4"
-                            Padding="8,4"
-                            Margin="0,0,8,0">
-                        <TextBlock Text="{Binding VehicleBadgeText}"
-                                   FontFamily="{StaticResource UiFontFamily}"
-                                   FontSize="11"
-                                   FontWeight="Bold"
-                                   Foreground="#FFFFFF"
-                                   VerticalAlignment="Center" />
+                            CornerRadius="8"
+                            Padding="10,5"
+                            Margin="0,3,14,3">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <Border Background="#000000"
+                                    BorderBrush="#3A3A3F"
+                                    BorderThickness="1"
+                                    CornerRadius="5"
+                                    Padding="9,4"
+                                    Margin="0,0,8,0">
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="7" Height="7" Margin="0,0,6,0" VerticalAlignment="Center">
+                                        <Ellipse.Style>
+                                            <Style TargetType="{x:Type Ellipse}">
+                                                <Setter Property="Fill" Value="#666670" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsTransportConnected}" Value="True">
+                                                        <Setter Property="Fill" Value="#34C759" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
+                                    <TextBlock Text="{Binding VehicleBadgeText}"
+                                               FontFamily="{StaticResource UiFontFamily}"
+                                               FontSize="11"
+                                               FontWeight="Bold"
+                                               Foreground="#FFFFFF"
+                                               VerticalAlignment="Center" />
+                                </StackPanel>
+                            </Border>
+
+                            <Grid Width="134" Height="30" Margin="0,0,8,0">
+                                <ComboBox ItemsSource="{Binding AvailableModes}"
+                                          SelectedItem="{Binding SelectedMode}"
+                                          SelectionChanged="OnFlightModeComboSelectionChanged"
+                                          DisplayMemberPath="Name"
+                                          ToolTip="Uçuş modu seçin (seçim anında uygulanır)"
+                                          Style="{StaticResource SpaceXComboBoxStyle}"
+                                          Width="134"
+                                          Height="30"
+                                          MinHeight="30"
+                                          Padding="8,2"
+                                          FontSize="11.5" />
+                                <TextBlock Text="MOD SEÇ"
+                                           FontFamily="{StaticResource UiFontFamily}"
+                                           FontSize="11"
+                                           Foreground="#666670"
+                                           VerticalAlignment="Center"
+                                           Margin="9,0,24,0"
+                                           IsHitTestVisible="False">
+                                    <TextBlock.Style>
+                                        <Style TargetType="{x:Type TextBlock}">
+                                            <Setter Property="Visibility" Value="Collapsed" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding SelectedMode}" Value="{x:Null}">
+                                                    <Setter Property="Visibility" Value="Visible" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Grid>
+
+                            <!-- ARMED / DISARMED BADGE -->
+                            <Border CornerRadius="5" Padding="9,4">
+                                <Border.Style>
+                                    <Style TargetType="{x:Type Border}">
+                                        <Setter Property="Background" Value="#000000" />
+                                        <Setter Property="BorderBrush" Value="#3A3A3F" />
+                                        <Setter Property="BorderThickness" Value="1" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsArmed}" Value="True">
+                                                <Setter Property="BorderBrush" Value="#FF3B30" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                    <Ellipse Width="7" Height="7" Margin="0,0,6,0" VerticalAlignment="Center">
+                                        <Ellipse.Style>
+                                            <Style TargetType="{x:Type Ellipse}">
+                                                <Setter Property="Fill" Value="#5A5A5F" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsArmed}" Value="True">
+                                                        <Setter Property="Fill" Value="#FF3B30" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </Ellipse.Style>
+                                    </Ellipse>
+                                    <TextBlock Text="{Binding ArmedBadgeText}"
+                                               FontFamily="{StaticResource UiFontFamily}"
+                                               FontSize="11"
+                                               FontWeight="Bold">
+                                        <TextBlock.Style>
+                                            <Style TargetType="{x:Type TextBlock}">
+                                                <Setter Property="Foreground" Value="#9B9BA6" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsArmed}" Value="True">
+                                                        <Setter Property="Foreground" Value="#FF3B30" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
+                                </StackPanel>
+                            </Border>
+                        </StackPanel>
                     </Border>
 
-                    <ComboBox ItemsSource="{Binding AvailableModes}"
-                              SelectedItem="{Binding SelectedMode}"
-                              DisplayMemberPath="Name"
-                              Style="{StaticResource SpaceXComboBoxStyle}"
-                              Width="126"
-                              Height="30"
-                              FontSize="11"
-                              Margin="0,0,4,0" />
-                    <Button Content="MOD"
-                            Command="{Binding ApplySelectedModeCommand}"
-                            Style="{StaticResource GhostPillButtonStyle}"
-                            Padding="10,4"
-                            FontSize="10"
-                            Margin="0,0,8,0" />
-
-                    <!-- ARMED / DISARMED BADGE -->
-                    <Border CornerRadius="4" Padding="8,4" Margin="0,0,10,0">
-                        <Border.Style>
-                            <Style TargetType="{x:Type Border}">
-                                <Setter Property="Background" Value="#0A0A0A" />
-                                <Setter Property="BorderBrush" Value="#3A3A3F" />
-                                <Setter Property="BorderThickness" Value="1" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsArmed}" Value="True">
-                                        <Setter Property="BorderBrush" Value="#FF3B30" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </Border.Style>
-                        <TextBlock Text="{Binding ArmedBadgeText}"
-                                   FontFamily="{StaticResource UiFontFamily}"
-                                   FontSize="11"
-                                   FontWeight="Bold">
-                            <TextBlock.Style>
-                                <Style TargetType="{x:Type TextBlock}">
-                                    <Setter Property="Foreground" Value="#5A5A5F" />
-                                    <Style.Triggers>
-                                        <DataTrigger Binding="{Binding IsArmed}" Value="True">
-                                            <Setter Property="Foreground" Value="#FF3B30" />
-                                        </DataTrigger>
-                                    </Style.Triggers>
-                                </Style>
-                            </TextBlock.Style>
-                        </TextBlock>
-                    </Border>
-
-                    <!-- BAT / GPS / RSSI -->
-                    <TextBlock Text="BAT " Style="{DynamicResource MicroCapTextStyle}" FontSize="11" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding BatteryDisplayText}"
-                               FontSize="11"
-                               FontWeight="Bold"
-                               VerticalAlignment="Center"
-                               Margin="0,0,10,0">
-                        <TextBlock.Style>
-                            <Style TargetType="{x:Type TextBlock}">
-                                <Setter Property="Foreground" Value="#FFFFFF" />
-                                <Style.Triggers>
-                                    <DataTrigger Binding="{Binding IsBatteryLow}" Value="True">
-                                        <Setter Property="Foreground" Value="#FFCC00" />
-                                    </DataTrigger>
-                                    <DataTrigger Binding="{Binding IsBatteryCritical}" Value="True">
-                                        <Setter Property="Foreground" Value="#FF3B30" />
-                                    </DataTrigger>
-                                </Style.Triggers>
-                            </Style>
-                        </TextBlock.Style>
-                    </TextBlock>
-
-                    <TextBlock Text="GPS " Style="{DynamicResource MicroCapTextStyle}" FontSize="11" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding GpsDisplayText}"
-                               FontSize="11"
-                               FontWeight="Bold"
-                               Foreground="#FFFFFF"
-                               VerticalAlignment="Center"
-                               Margin="0,0,10,0" />
-
-                    <TextBlock Text="RSSI " Style="{DynamicResource MicroCapTextStyle}" FontSize="11" VerticalAlignment="Center" />
-                    <TextBlock Text="{Binding RssiDisplayText}"
-                               FontSize="11"
-                               FontWeight="Bold"
-                               Foreground="#FFFFFF"
-                               VerticalAlignment="Center"
-                               Margin="0,0,10,0" />
-
-                    <Border Background="#0A0A0A"
-                            BorderBrush="#FF3B30"
+                    <!-- CARD 3: SYSTEM LINK + FRESHNESS + BAT/GPS/RSSI -->
+                    <Border Background="#0B0C10"
+                            BorderBrush="#262830"
                             BorderThickness="1"
-                            CornerRadius="4"
-                            Padding="8,3"
-                            Visibility="{Binding LinkLost, Converter={StaticResource BoolToVisibility}}">
-                        <TextBlock Text="LINK LOST"
-                                   FontSize="11"
-                                   FontWeight="Bold"
-                                   Foreground="#FF3B30" />
+                            CornerRadius="8"
+                            Padding="11,5"
+                            Margin="0,3,0,3">
+                        <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                            <TextBlock Text="BAT " Style="{DynamicResource MicroCapTextStyle}" FontSize="10.5" Foreground="#8E8E98" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding BatteryDisplayText}"
+                                       FontSize="11.5"
+                                       FontWeight="Bold"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,12,0">
+                                <TextBlock.Style>
+                                    <Style TargetType="{x:Type TextBlock}">
+                                        <Setter Property="Foreground" Value="#FFFFFF" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding IsBatteryLow}" Value="True">
+                                                <Setter Property="Foreground" Value="#FFCC00" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding IsBatteryCritical}" Value="True">
+                                                <Setter Property="Foreground" Value="#FF3B30" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </TextBlock.Style>
+                            </TextBlock>
+
+                            <TextBlock Text="GPS " Style="{DynamicResource MicroCapTextStyle}" FontSize="10.5" Foreground="#8E8E98" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding GpsDisplayText}"
+                                       FontSize="11.5"
+                                       FontWeight="Bold"
+                                       Foreground="#FFFFFF"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,12,0" />
+
+                            <TextBlock Text="RSSI " Style="{DynamicResource MicroCapTextStyle}" FontSize="10.5" Foreground="#8E8E98" VerticalAlignment="Center" />
+                            <TextBlock Text="{Binding RssiDisplayText}"
+                                       FontSize="11.5"
+                                       FontWeight="Bold"
+                                       Foreground="#FFFFFF"
+                                       VerticalAlignment="Center"
+                                       Margin="0,0,12,0" />
+
+                            <!-- DATA FRESHNESS PILL -->
+                            <Border Background="#000000"
+                                    CornerRadius="5"
+                                    Padding="8,3"
+                                    BorderThickness="1">
+                                <Border.Style>
+                                    <Style TargetType="{x:Type Border}">
+                                        <Setter Property="BorderBrush" Value="#3A3A3F" />
+                                        <Style.Triggers>
+                                            <DataTrigger Binding="{Binding DataFreshnessState}" Value="Fresh">
+                                                <Setter Property="BorderBrush" Value="#34C759" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding DataFreshnessState}" Value="Stale">
+                                                <Setter Property="BorderBrush" Value="#FFCC00" />
+                                            </DataTrigger>
+                                            <DataTrigger Binding="{Binding DataFreshnessState}" Value="Lost">
+                                                <Setter Property="BorderBrush" Value="#FF3B30" />
+                                            </DataTrigger>
+                                        </Style.Triggers>
+                                    </Style>
+                                </Border.Style>
+                                <TextBlock Text="{Binding DataFreshnessText, StringFormat=VERİ: {0}}"
+                                           FontFamily="{StaticResource DisplayFontFamily}"
+                                           FontSize="10.5"
+                                           FontWeight="Bold">
+                                    <TextBlock.Style>
+                                        <Style TargetType="{x:Type TextBlock}">
+                                            <Setter Property="Foreground" Value="#8E96A8" />
+                                            <Style.Triggers>
+                                                <DataTrigger Binding="{Binding DataFreshnessState}" Value="Fresh">
+                                                    <Setter Property="Foreground" Value="#34C759" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding DataFreshnessState}" Value="Stale">
+                                                    <Setter Property="Foreground" Value="#FFCC00" />
+                                                </DataTrigger>
+                                                <DataTrigger Binding="{Binding DataFreshnessState}" Value="Lost">
+                                                    <Setter Property="Foreground" Value="#FF453A" />
+                                                </DataTrigger>
+                                            </Style.Triggers>
+                                        </Style>
+                                    </TextBlock.Style>
+                                </TextBlock>
+                            </Border>
+                        </StackPanel>
                     </Border>
-                </StackPanel>
                 </WrapPanel>
 
-                <!-- RIGHT: GUARDED EMERGENCY ACTIONS -->
-                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="8,0,0,0">
-                    <Button Content="HOLD"
-                            Command="{Binding RequestHoldCommand}"
+                <!-- RIGHT: SETTINGS BUTTON -->
+                <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0">
+                    <Button Content="⚙ AYARLAR"
+                            ToolTip="Kamera, çevrimdışı harita ve uçuş ayarları"
+                            Click="OnOpenSettingsPopupClick"
                             Style="{StaticResource GhostPillButtonStyle}"
-                            Padding="14,5"
-                            FontSize="11"
-                            Margin="0,0,6,0" />
-                    <Button Content="RTL"
-                            Command="{Binding RequestRtlCommand}"
-                            Style="{StaticResource DangerGhostPillButtonStyle}"
+                            MinHeight="32"
                             Padding="16,5"
-                            FontSize="11" />
+                            FontSize="11.5" />
                 </StackPanel>
             </Grid>
         </Border>
@@ -268,13 +388,14 @@
         <!-- COCKPIT BODY -->
         <Grid Grid.Row="1">
             <Grid.ColumnDefinitions>
+                <ColumnDefinition x:Name="LeftSidebarColumn" Width="382" />
                 <ColumnDefinition Width="Auto" />
                 <ColumnDefinition Width="*" />
             </Grid.ColumnDefinitions>
 
-            <!-- LEFT COLUMN (360px, #0a0a0a, right 1px #3a3a3f, collapsible) -->
+            <!-- LEFT COLUMN (resizable, #0a0a0a, right 1px #3a3a3f, collapsible) -->
             <Border Grid.Column="0"
-                    Width="360"
+                    MinWidth="330"
                     Background="#0A0A0A"
                     BorderBrush="#3A3A3F"
                     BorderThickness="0,0,1,0"
@@ -288,108 +409,256 @@
                     <controls:HudControl Grid.Row="0"
                                          Snapshot="{Binding HudSnapshot}"
                                          VehicleProfile="{Binding ActiveProfile}"
-                                         Height="250"
-                                         Margin="8" />
+                                         Height="264"
+                                         Margin="8,8,8,6" />
 
                     <TabControl Grid.Row="1" Style="{StaticResource SpaceXTabControlStyle}">
                         <!-- TELEMETRİ TAB -->
                         <TabItem Header="TELEMETRİ">
-                            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8">
-                                <UniformGrid Columns="2">
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="İRTİFA (REL)" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Text="{Binding Snapshot.AltitudeRelativeMeters, StringFormat={}{0:0.0} M}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="18" />
+                            <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="8,6">
+                                <UniformGrid Columns="2" VerticalAlignment="Top">
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="İRTİFA (REL)" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding AltitudeRelativeDisplay}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="19" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="İRTİFA (AMSL)" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Text="{Binding Snapshot.AltitudeAmslMeters, StringFormat={}{0:0.0} M}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="18" />
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="İRTİFA (AMSL)" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding AltitudeAmslDisplay}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="19" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="HAVA HIZI (IAS)" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Text="{Binding Snapshot.AirspeedMps, StringFormat={}{0:0.0} M/S}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="18" />
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="HAVA HIZI (IAS)" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding AirspeedDisplay}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="19" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="YER HIZI (GS)" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Text="{Binding Snapshot.GroundspeedMps, StringFormat={}{0:0.0} M/S}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="18" />
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="YER HIZI (GS)" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding GroundspeedDisplay}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="19" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="DİKEY HIZ (VSI)" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Text="{Binding Snapshot.VerticalSpeedMps, StringFormat={}{0:+0.0;-0.0;0.0} M/S}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="18" />
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="DİKEY HIZ (VSI)" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding VerticalSpeedDisplay}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="19" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="HOME MESAFE" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Text="{Binding HomeDistanceDisplayText}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="18" />
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="HOME MESAFE" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding HomeDistanceDisplayText}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="19" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="BATARYA" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Text="{Binding BatteryDisplayText}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="16" />
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="BATARYA" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding BatteryDisplayText}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="17" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="AKIM / GAZ" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="16">
-                                                <TextBlock.Text>
-                                                    <MultiBinding StringFormat="{}{0:0.0}A · %{1}">
-                                                        <Binding Path="Snapshot.BatteryCurrentAmps" />
-                                                        <Binding Path="Snapshot.ThrottlePercent" />
-                                                    </MultiBinding>
-                                                </TextBlock.Text>
-                                            </TextBlock>
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="AKIM / GAZ" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding CurrentThrottleDisplay}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="17" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="BAŞ AÇISI (HDG)" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Text="{Binding Snapshot.HeadingDeg, StringFormat={}{0:000}°}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="18" />
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="BAŞ AÇISI (HDG)" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding HeadingDisplay}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="19" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="ROLL / PITCH" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="16">
-                                                <TextBlock.Text>
-                                                    <MultiBinding StringFormat="{}{0:0}° / {1:0}°">
-                                                        <Binding Path="Snapshot.RollDeg" />
-                                                        <Binding Path="Snapshot.PitchDeg" />
-                                                    </MultiBinding>
-                                                </TextBlock.Text>
-                                            </TextBlock>
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="ROLL / PITCH" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding RollPitchDisplay}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="17" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="ENLEM (LAT)" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Text="{Binding Snapshot.Latitude, StringFormat={}{0:0.000000}}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="14" />
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="ENLEM (LAT)" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding LatitudeDisplay}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="15.5" />
                                         </StackPanel>
                                     </Border>
-                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="8">
-                                        <StackPanel>
-                                            <TextBlock Text="BOYLAM (LON)" Style="{StaticResource MicroCapTextStyle}" FontSize="10" />
-                                            <TextBlock Text="{Binding Snapshot.Longitude, StringFormat={}{0:0.000000}}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="14" />
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Margin="3" Padding="10,7">
+                                        <StackPanel VerticalAlignment="Center">
+                                            <TextBlock Text="BOYLAM (LON)" Style="{StaticResource MicroCapTextStyle}" FontSize="11" Foreground="#A6A6B2" Margin="0,0,0,2" />
+                                            <TextBlock Text="{Binding LongitudeDisplay}" Style="{StaticResource DisplayTelemetryTextStyle}" FontSize="15.5" />
                                         </StackPanel>
                                     </Border>
                                 </UniformGrid>
                             </ScrollViewer>
                         </TabItem>
 
-                        <!-- KOMUTLAR TAB -->
-                        <TabItem Header="KOMUTLAR">
+                        <!-- SİSTEM SAĞLIĞI MERKEZİ TAB -->
+                        <TabItem Header="SAĞLIK">
+                            <Grid Background="#000000" Margin="8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+                                <Border Grid.Row="0" Style="{StaticResource HairlinePanelStyle}" Padding="10,7" Margin="0,0,0,6">
+                                    <DockPanel>
+                                        <TextBlock DockPanel.Dock="Right"
+                                                   Text="{Binding SystemHealthSummaryText}"
+                                                   FontFamily="{StaticResource DisplayFontFamily}"
+                                                   FontSize="12"
+                                                   FontWeight="Bold"
+                                                   Foreground="#34C759"
+                                                   VerticalAlignment="Center" />
+                                        <StackPanel>
+                                            <TextBlock Text="SİSTEM SAĞLIK MERKEZİ"
+                                                       Style="{StaticResource MicroCapTextStyle}"
+                                                       FontSize="11"
+                                                       Foreground="#FFFFFF" />
+                                            <TextBlock Text="{Binding DataFreshnessText, StringFormat=TELEMETRİ TAZELİĞİ: {0}}"
+                                                       FontSize="10.5"
+                                                       Foreground="#9B9BA6"
+                                                       Margin="0,2,0,0" />
+                                        </StackPanel>
+                                    </DockPanel>
+                                </Border>
+                                <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+                                    <ItemsControl ItemsSource="{Binding SystemHealthItems}">
+                                        <ItemsControl.ItemTemplate>
+                                            <DataTemplate>
+                                                <Border Style="{StaticResource HairlinePanelStyle}" Padding="10,7" Margin="0,0,0,5">
+                                                    <Grid>
+                                                        <Grid.RowDefinitions>
+                                                            <RowDefinition Height="Auto" />
+                                                            <RowDefinition Height="Auto" />
+                                                        </Grid.RowDefinitions>
+                                                        <DockPanel Grid.Row="0">
+                                                            <TextBlock DockPanel.Dock="Right"
+                                                                       Text="{Binding StatusText}"
+                                                                       FontFamily="{StaticResource DisplayFontFamily}"
+                                                                       FontSize="11"
+                                                                       FontWeight="Bold"
+                                                                       VerticalAlignment="Center">
+                                                                <TextBlock.Style>
+                                                                    <Style TargetType="{x:Type TextBlock}">
+                                                                        <Setter Property="Foreground" Value="#8E8E98" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding State}" Value="Ok">
+                                                                                <Setter Property="Foreground" Value="#34C759" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding State}" Value="Warning">
+                                                                                <Setter Property="Foreground" Value="#FFCC00" />
+                                                                            </DataTrigger>
+                                                                            <DataTrigger Binding="{Binding State}" Value="Critical">
+                                                                                <Setter Property="Foreground" Value="#FF3B30" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </TextBlock.Style>
+                                                            </TextBlock>
+                                                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+                                                                <Ellipse Width="7" Height="7" Margin="0,0,6,0">
+                                                                    <Ellipse.Style>
+                                                                        <Style TargetType="{x:Type Ellipse}">
+                                                                            <Setter Property="Fill" Value="#666670" />
+                                                                            <Style.Triggers>
+                                                                                <DataTrigger Binding="{Binding State}" Value="Ok">
+                                                                                    <Setter Property="Fill" Value="#34C759" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding State}" Value="Warning">
+                                                                                    <Setter Property="Fill" Value="#FFCC00" />
+                                                                                </DataTrigger>
+                                                                                <DataTrigger Binding="{Binding State}" Value="Critical">
+                                                                                    <Setter Property="Fill" Value="#FF3B30" />
+                                                                                </DataTrigger>
+                                                                            </Style.Triggers>
+                                                                        </Style>
+                                                                    </Ellipse.Style>
+                                                                </Ellipse>
+                                                                <TextBlock Text="{Binding Title}"
+                                                                           FontFamily="{StaticResource DisplayFontFamily}"
+                                                                           FontSize="11.5"
+                                                                           FontWeight="Bold"
+                                                                           Foreground="#F0F0FA" />
+                                                            </StackPanel>
+                                                        </DockPanel>
+                                                        <TextBlock Grid.Row="1"
+                                                                   Text="{Binding Detail}"
+                                                                   FontSize="11"
+                                                                   Foreground="#8E8E98"
+                                                                   Margin="13,2,0,0"
+                                                                   TextWrapping="Wrap" />
+                                                    </Grid>
+                                                </Border>
+                                            </DataTemplate>
+                                        </ItemsControl.ItemTemplate>
+                                    </ItemsControl>
+                                </ScrollViewer>
+                            </Grid>
+                        </TabItem>
+
+                        <!-- KOMUT TAB -->
+                        <TabItem Header="KOMUT">
                             <ScrollViewer VerticalScrollBarVisibility="Auto" Padding="10">
                                 <StackPanel>
+                                    <!-- PRE-FLIGHT CHECKLIST -->
+                                    <Border Style="{StaticResource HairlinePanelStyle}" Padding="10" Margin="0,0,0,10">
+                                        <StackPanel>
+                                            <DockPanel Margin="0,0,0,6">
+                                                <TextBlock DockPanel.Dock="Right"
+                                                           Text="{Binding PreFlightSummaryText}"
+                                                           FontFamily="{StaticResource DisplayFontFamily}"
+                                                           FontSize="10.5"
+                                                           FontWeight="Bold"
+                                                           VerticalAlignment="Center">
+                                                    <TextBlock.Style>
+                                                        <Style TargetType="{x:Type TextBlock}">
+                                                            <Setter Property="Foreground" Value="#FFD60A" />
+                                                            <Style.Triggers>
+                                                                <DataTrigger Binding="{Binding IsPreFlightReady}" Value="True">
+                                                                    <Setter Property="Foreground" Value="#34C759" />
+                                                                </DataTrigger>
+                                                            </Style.Triggers>
+                                                        </Style>
+                                                    </TextBlock.Style>
+                                                </TextBlock>
+                                                <TextBlock Text="PRE-FLIGHT HAZIRBULUNUŞLUK"
+                                                           Style="{StaticResource MicroCapTextStyle}"
+                                                           FontSize="11"
+                                                           VerticalAlignment="Center" />
+                                            </DockPanel>
+                                            <ItemsControl ItemsSource="{Binding PreFlightChecks}">
+                                                <ItemsControl.ItemTemplate>
+                                                    <DataTemplate>
+                                                        <DockPanel Margin="0,2">
+                                                            <Ellipse DockPanel.Dock="Left" Width="7" Height="7" Margin="0,0,6,0" VerticalAlignment="Center">
+                                                                <Ellipse.Style>
+                                                                    <Style TargetType="{x:Type Ellipse}">
+                                                                        <Setter Property="Fill" Value="#FF453A" />
+                                                                        <Style.Triggers>
+                                                                            <DataTrigger Binding="{Binding IsPassed}" Value="True">
+                                                                                <Setter Property="Fill" Value="#34C759" />
+                                                                            </DataTrigger>
+                                                                        </Style.Triggers>
+                                                                    </Style>
+                                                                </Ellipse.Style>
+                                                            </Ellipse>
+                                                            <TextBlock DockPanel.Dock="Right"
+                                                                       Text="{Binding Detail}"
+                                                                       FontSize="10.5"
+                                                                       Foreground="#8E8E98"
+                                                                       VerticalAlignment="Center" />
+                                                            <TextBlock Text="{Binding Title}"
+                                                                       FontSize="11"
+                                                                       FontWeight="Bold"
+                                                                       Foreground="#E5E5F0"
+                                                                       VerticalAlignment="Center" />
+                                                        </DockPanel>
+                                                    </DataTemplate>
+                                                </ItemsControl.ItemTemplate>
+                                            </ItemsControl>
+                                        </StackPanel>
+                                    </Border>
+
                                     <!-- SAFETY ARM/DISARM + TAKEOFF/LAND -->
                                     <Border Style="{StaticResource HairlinePanelStyle}" Padding="10" Margin="0,0,0,10">
                                         <StackPanel>
@@ -420,10 +689,33 @@
                                                 <Button Grid.Column="2" Content="KALKIŞ (TAKEOFF)" Command="{Binding RequestTakeoffCommand}" Style="{StaticResource GhostPillButtonStyle}" Padding="10,6" FontSize="11" />
                                             </Grid>
 
-                                            <UniformGrid Columns="2">
-                                                <Button Content="İNİŞ (LAND)" Command="{Binding RequestLandCommand}" Style="{StaticResource GhostPillButtonStyle}" Padding="10,6" FontSize="11" Margin="0,0,4,0" />
-                                                <Button Content="HOME GÜNCELLE" Command="{Binding SetHomeCurrentCommand}" Style="{StaticResource GhostPillButtonStyle}" Padding="10,6" FontSize="11" Margin="4,0,0,0" />
+                                            <UniformGrid Columns="2" Margin="0,0,0,8">
+                                                <Button Content="▶ GÖREVİ BAŞLAT"
+                                                        Command="{Binding RequestStartMissionCommand}"
+                                                        Style="{StaticResource GhostPillButtonStyle}"
+                                                        BorderBrush="#34C759"
+                                                        Foreground="#34C759"
+                                                        Padding="8,7"
+                                                        FontSize="10.5"
+                                                        FontWeight="Bold"
+                                                        Margin="0,0,4,0" />
+                                                <Button Content="⏸ GÖREVİ DURDUR"
+                                                        Command="{Binding RequestHoldCommand}"
+                                                        Style="{StaticResource GhostPillButtonStyle}"
+                                                        BorderBrush="#FF9F0A"
+                                                        Foreground="#FF9F0A"
+                                                        Padding="8,7"
+                                                        FontSize="10.5"
+                                                        FontWeight="Bold"
+                                                        Margin="4,0,0,0" />
                                             </UniformGrid>
+
+                                            <UniformGrid Columns="2" Margin="0,0,0,8">
+                                                <Button Content="İNİŞ (LAND)" Command="{Binding RequestLandCommand}" Style="{StaticResource GhostPillButtonStyle}" Padding="10,6" FontSize="11" Margin="0,0,4,0" />
+                                                <Button Content="↩ EVE DÖN (RTL)" Command="{Binding RequestRtlCommand}" Style="{StaticResource DangerGhostPillButtonStyle}" Padding="10,6" FontSize="11" Margin="4,0,0,0" />
+                                            </UniformGrid>
+
+                                            <Button Content="HOME GÜNCELLE" Command="{Binding SetHomeCurrentCommand}" Style="{StaticResource GhostPillButtonStyle}" Padding="10,6" FontSize="11" />
                                         </StackPanel>
                                     </Border>
 
@@ -463,8 +755,8 @@
                                                     <ColumnDefinition Width="*" />
                                                     <ColumnDefinition Width="80" />
                                                 </Grid.ColumnDefinitions>
-                                                <TextBlock Grid.Column="0" Text="VARSAYILAN GUIDED İRTİFA (M):" Style="{StaticResource MicroCapTextStyle}" FontSize="10" VerticalAlignment="Center" />
-                                                <TextBox Grid.Column="1" Text="{Binding GuidedDefaultAltitudeMeters, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource SpaceXTextBoxStyle}" Height="28" />
+                                                <TextBlock Grid.Column="0" Text="VARSAYILAN GUIDED İRTİFA (M):" Style="{StaticResource MicroCapTextStyle}" FontSize="10.5" VerticalAlignment="Center" />
+                                                <TextBox Grid.Column="1" Text="{Binding GuidedDefaultAltitudeMeters, UpdateSourceTrigger=PropertyChanged}" Style="{StaticResource SpaceXTextBoxStyle}" Height="30" Padding="8,2" FontSize="12" />
                                             </Grid>
                                         </StackPanel>
                                     </Border>
@@ -472,199 +764,259 @@
                             </ScrollViewer>
                         </TabItem>
 
-                        <!-- GÜNLÜK TAB -->
-                        <TabItem Header="GÜNLÜK">
-                            <ListBox ItemsSource="{Binding Logs}"
-                                     Background="#000000"
-                                     BorderThickness="0"
-                                     Padding="6"
-                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
-                                <ListBox.ItemTemplate>
-                                    <DataTemplate>
-                                        <TextBlock Text="{Binding DisplayLine}"
-                                                   FontFamily="{StaticResource UiFontFamily}"
+                        <!-- PARAM TAB -->
+                        <TabItem Header="PARAM">
+                            <Grid Background="#000000" Margin="8">
+                                <Grid.RowDefinitions>
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="Auto" />
+                                    <RowDefinition Height="*" />
+                                </Grid.RowDefinitions>
+
+                                <DockPanel Grid.Row="0" Margin="0,0,0,6">
+                                    <Button DockPanel.Dock="Right"
+                                            Content="OKU"
+                                            ToolTip="Araçtan tüm parametreleri oku (PARAM_REQUEST_LIST)"
+                                            Command="{Binding RefreshParametersCommand}"
+                                            Style="{StaticResource GhostPillButtonStyle}"
+                                            MinHeight="30"
+                                            Padding="12,4"
+                                            FontSize="11"
+                                            Margin="6,0,0,0" />
+                                    <TextBox Text="{Binding ParameterSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                             ToolTip="Parametre ara (örn. WPNAV, RTL_ALT, BATT)"
+                                             Style="{StaticResource SpaceXTextBoxStyle}"
+                                             Height="30"
+                                             Padding="8,2"
+                                             FontSize="12" />
+                                </DockPanel>
+
+                                <StackPanel Grid.Row="1" Margin="0,0,0,6">
+                                    <TextBlock Text="{Binding ParameterStatusText}"
+                                               Style="{StaticResource MicroCapTextStyle}"
+                                               FontSize="10.5"
+                                               Foreground="#9B9BA6"
+                                               Margin="0,0,0,4" />
+                                    <ProgressBar Minimum="0"
+                                                 Maximum="100"
+                                                 Value="{Binding ParameterProgressPercent, Mode=OneWay}"
+                                                 Height="3"
+                                                 Style="{StaticResource SpaceXProgressBarStyle}" />
+                                </StackPanel>
+
+                                <ListBox Grid.Row="2"
+                                         ItemsSource="{Binding FilteredParameters}"
+                                         Background="#050508"
+                                         BorderBrush="#24242B"
+                                         BorderThickness="1"
+                                         VirtualizingPanel.IsVirtualizing="True"
+                                         VirtualizingPanel.VirtualizationMode="Recycling"
+                                         ScrollViewer.CanContentScroll="True"
+                                         ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                    <ListBox.ItemContainerStyle>
+                                        <Style TargetType="{x:Type ListBoxItem}">
+                                            <Setter Property="HorizontalContentAlignment" Value="Stretch" />
+                                            <Setter Property="Padding" Value="6,4" />
+                                            <Setter Property="BorderBrush" Value="#1A1A22" />
+                                            <Setter Property="BorderThickness" Value="0,0,0,1" />
+                                        </Style>
+                                    </ListBox.ItemContainerStyle>
+                                    <ListBox.ItemTemplate>
+                                        <DataTemplate>
+                                            <Grid>
+                                                <Grid.ColumnDefinitions>
+                                                    <ColumnDefinition Width="*" />
+                                                    <ColumnDefinition Width="78" />
+                                                    <ColumnDefinition Width="Auto" />
+                                                </Grid.ColumnDefinitions>
+                                                <TextBlock Grid.Column="0"
+                                                           Text="{Binding Name}"
+                                                           FontFamily="Consolas, Segoe UI"
+                                                           FontSize="11.5"
+                                                           FontWeight="Bold"
+                                                           Foreground="#F0F0FA"
+                                                           VerticalAlignment="Center"
+                                                           TextTrimming="CharacterEllipsis" />
+                                                <TextBox Grid.Column="1"
+                                                         Text="{Binding EditValue, UpdateSourceTrigger=PropertyChanged}"
+                                                         Style="{StaticResource SpaceXTextBoxStyle}"
+                                                         Height="26"
+                                                         MinHeight="26"
+                                                         Padding="6,1"
+                                                         FontSize="11.5"
+                                                         Margin="4,0" />
+                                                <Button Grid.Column="2"
+                                                        Content="YAZ"
+                                                        Command="{Binding DataContext.ApplyParameterCommand, RelativeSource={RelativeSource AncestorType=Window}}"
+                                                        CommandParameter="{Binding}"
+                                                        Style="{StaticResource GhostPillButtonStyle}"
+                                                        MinHeight="26"
+                                                        Padding="8,2"
+                                                        FontSize="10" />
+                                            </Grid>
+                                        </DataTemplate>
+                                    </ListBox.ItemTemplate>
+                                </ListBox>
+                            </Grid>
+                        </TabItem>
+
+                        <!-- TLOG REPLAY TAB -->
+                        <TabItem Header="REPLAY">
+                            <StackPanel Margin="10">
+                                <Border Style="{StaticResource HairlinePanelStyle}" Padding="10" Margin="0,0,0,10">
+                                    <StackPanel>
+                                        <TextBlock Text="TELEMETRİ KAYDI YENİDEN OYNAT (.TLOG)"
+                                                   Style="{StaticResource MicroCapTextStyle}"
                                                    FontSize="11"
-                                                   TextWrapping="Wrap"
-                                                   Margin="0,2">
-                                            <TextBlock.Style>
-                                                <Style TargetType="{x:Type TextBlock}">
-                                                    <Setter Property="Foreground" Value="#F0F0FA" />
-                                                    <Style.Triggers>
-                                                        <DataTrigger Binding="{Binding Severity}" Value="Warning">
-                                                            <Setter Property="Foreground" Value="#FFCC00" />
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Severity}" Value="Error">
-                                                            <Setter Property="Foreground" Value="#FF3B30" />
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Severity}" Value="Critical">
-                                                            <Setter Property="Foreground" Value="#FF3B30" />
-                                                        </DataTrigger>
-                                                        <DataTrigger Binding="{Binding Severity}" Value="Emergency">
-                                                            <Setter Property="Foreground" Value="#FF3B30" />
-                                                        </DataTrigger>
-                                                    </Style.Triggers>
-                                                </Style>
-                                            </TextBlock.Style>
-                                        </TextBlock>
-                                    </DataTemplate>
-                                </ListBox.ItemTemplate>
-                            </ListBox>
+                                                   Margin="0,0,0,8" />
+                                        <Button Content=".TLOG DOSYASI AÇ"
+                                                Click="OnOpenReplayFileClick"
+                                                Style="{StaticResource GhostPillButtonStyle}"
+                                                Padding="12,6"
+                                                FontSize="11"
+                                                Margin="0,0,0,8" />
+                                        <TextBlock Text="{Binding ReplayFileName}"
+                                                   FontFamily="Consolas, Segoe UI"
+                                                   FontSize="12"
+                                                   FontWeight="Bold"
+                                                   Foreground="#FFFFFF"
+                                                   TextTrimming="CharacterEllipsis" />
+                                        <TextBlock Text="{Binding ReplayTimeDisplay}"
+                                                   FontFamily="{StaticResource DisplayFontFamily}"
+                                                   FontSize="12"
+                                                   Foreground="#38BDF8"
+                                                   Margin="0,2,0,8" />
+
+                                        <Slider Minimum="0"
+                                                Maximum="100"
+                                                Value="{Binding ReplayProgressPercent, Mode=OneWay}"
+                                                IsEnabled="{Binding IsReplayMode}"
+                                                Thumb.DragCompleted="OnReplaySliderDragCompleted"
+                                                Margin="0,0,0,10" />
+
+                                        <UniformGrid Columns="3">
+                                            <Button Command="{Binding ToggleReplayPlayPauseCommand}"
+                                                    Margin="0,0,4,0"
+                                                    Padding="8,6"
+                                                    FontSize="11">
+                                                <Button.Style>
+                                                    <Style TargetType="{x:Type Button}" BasedOn="{StaticResource GhostPillButtonStyle}">
+                                                        <Setter Property="Content" Value="OYNAT" />
+                                                        <Style.Triggers>
+                                                            <DataTrigger Binding="{Binding IsReplayPlaying}" Value="True">
+                                                                <Setter Property="Content" Value="DURAKLAT" />
+                                                            </DataTrigger>
+                                                        </Style.Triggers>
+                                                    </Style>
+                                                </Button.Style>
+                                            </Button>
+                                            <Button Content="{Binding ReplaySpeedDisplay}"
+                                                    ToolTip="Oynatma hızını değiştir (1X / 2X / 4X)"
+                                                    Command="{Binding CycleReplaySpeedCommand}"
+                                                    Style="{StaticResource GhostPillButtonStyle}"
+                                                    Margin="2,0"
+                                                    Padding="8,6"
+                                                    FontSize="11" />
+                                            <Button Content="DURDUR"
+                                                    Command="{Binding StopReplayCommand}"
+                                                    Style="{StaticResource DangerGhostPillButtonStyle}"
+                                                    Margin="4,0,0,0"
+                                                    Padding="8,6"
+                                                    FontSize="11" />
+                                        </UniformGrid>
+                                    </StackPanel>
+                                </Border>
+                            </StackPanel>
                         </TabItem>
                     </TabControl>
                 </Grid>
             </Border>
 
-            <!-- RIGHT AREA: STAGE BAR + BANNERS + MAIN STAGE + BOTTOM DRAWER -->
-            <Grid Grid.Column="1">
+            <!-- VERTICAL RESIZE SPLITTER -->
+            <GridSplitter Grid.Column="1"
+                          Width="5"
+                          HorizontalAlignment="Center"
+                          VerticalAlignment="Stretch"
+                          Background="#14151B"
+                          ShowsPreview="True"
+                          Visibility="{Binding IsLeftPanelVisible, Converter={StaticResource BoolToVisibility}}" />
+
+            <!-- RIGHT AREA: STAGE BAR + BANNERS + MAIN STAGE + RESIZABLE BOTTOM DRAWER -->
+            <Grid Grid.Column="2">
                 <Grid.RowDefinitions>
                     <RowDefinition Height="Auto" />
-                    <RowDefinition Height="*" />
+                    <RowDefinition Height="*" MinHeight="110" />
                     <RowDefinition Height="Auto" />
+                    <RowDefinition x:Name="MissionDrawerRow" Height="286" />
                 </Grid.RowDefinitions>
 
-                <!-- STAGE CONTROL BAR + SAFETY / GEOFENCE ALERTS -->
+                <!-- STAGE CONTROL BAR + SAFETY ALERTS -->
                 <StackPanel Grid.Row="0" Background="#000000">
-                    <Border BorderBrush="#3A3A3F" BorderThickness="0,0,0,1" Padding="10,5">
-                        <WrapPanel Orientation="Horizontal" VerticalAlignment="Center">
+                    <Border BorderBrush="#3A3A3F" BorderThickness="0,0,0,1" Padding="12,6">
+                        <DockPanel LastChildFill="False" VerticalAlignment="Center">
                             <!-- MAP CONTROLS -->
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,12,2">
-                                <TextBlock Text="HARİTA:" Style="{StaticResource MicroCapTextStyle}" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0" />
+                            <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
+                                <TextBlock Text="HARİTA:" Style="{StaticResource MicroCapTextStyle}" FontSize="11" VerticalAlignment="Center" Margin="0,0,8,0" />
                                 <ComboBox x:Name="MapLayerCombo"
                                           DisplayMemberPath="Name"
                                           SelectionChanged="OnMapLayerSelectionChanged"
                                           Style="{StaticResource SpaceXComboBoxStyle}"
-                                          Width="150"
-                                          Height="28"
-                                          FontSize="11"
-                                          Margin="0,0,6,0" />
-                                <Button Content="ÇEVRİMDIŞI HARİTA / MBTILES"
-                                        Click="OnOpenOfflineMapDialogClick"
-                                        Style="{StaticResource GhostPillButtonStyle}"
-                                        Padding="12,4"
-                                        FontSize="10"
-                                        Margin="0,0,6,0" />
-                                <Button Content="ARACA ODAKLAN"
-                                        Click="OnCenterOnVehicleClick"
-                                        Style="{StaticResource GhostPillButtonStyle}"
-                                        Padding="10,4"
-                                        FontSize="10" />
-                            </StackPanel>
-
-                            <!-- CAMERA SOURCE + SWAP -->
-                            <StackPanel Orientation="Horizontal" VerticalAlignment="Center" Margin="0,2,0,2">
-                                <TextBlock Text="KAMERA:" Style="{StaticResource MicroCapTextStyle}" FontSize="11" VerticalAlignment="Center" Margin="0,0,6,0" />
-                                <ComboBox ItemsSource="{Binding VideoSourceKinds}"
-                                          SelectedItem="{Binding SelectedVideoSourceKind}"
-                                          Style="{StaticResource SpaceXComboBoxStyle}"
-                                          Width="128"
-                                          Height="28"
-                                          FontSize="11"
-                                          Margin="0,0,4,0">
-                                    <ComboBox.ItemTemplate>
-                                        <DataTemplate>
-                                            <TextBlock Text="{Binding Converter={StaticResource EnumDisplayConverter}}" />
-                                        </DataTemplate>
-                                    </ComboBox.ItemTemplate>
-                                </ComboBox>
-
-                                <!-- URL Input (UDP/RTSP) -->
-                                <TextBox Text="{Binding VideoStreamInput, UpdateSourceTrigger=PropertyChanged}"
-                                         Width="180"
-                                         Height="28"
-                                         FontSize="11"
-                                         Margin="0,0,4,0">
-                                    <TextBox.Style>
-                                        <Style TargetType="{x:Type TextBox}" BasedOn="{StaticResource SpaceXTextBoxStyle}">
-                                            <Setter Property="Visibility" Value="Visible" />
-                                            <Style.Triggers>
-                                                <DataTrigger Binding="{Binding IsUsbVideoSelected}" Value="True">
-                                                    <Setter Property="Visibility" Value="Collapsed" />
-                                                </DataTrigger>
-                                            </Style.Triggers>
-                                        </Style>
-                                    </TextBox.Style>
-                                </TextBox>
-
-                                <!-- USB DirectShow Device Picker -->
-                                <StackPanel Orientation="Horizontal"
-                                            Visibility="{Binding IsUsbVideoSelected, Converter={StaticResource BoolToVisibility}}">
-                                    <ComboBox ItemsSource="{Binding AvailableVideoDevices}"
-                                              Text="{Binding VideoStreamInput, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}"
-                                              IsEditable="True"
-                                              IsTextSearchEnabled="False"
-                                              Style="{StaticResource SpaceXComboBoxStyle}"
-                                              Width="150"
-                                              Height="28"
+                                          Width="168"
+                                          Height="30"
+                                          Padding="8,2"
+                                          FontSize="12"
+                                          Margin="0,0,10,0" />
+                                <ToggleButton IsChecked="{Binding IsFollowVehicleEnabled, Mode=OneWay}"
+                                              Command="{Binding ToggleFollowVehicleCommand}"
+                                              ToolTip="Açıkken harita aracı sürekli takip eder; kapalıyken haritada özgürce gezebilirsiniz"
+                                              Padding="14,5"
                                               FontSize="11"
-                                              Margin="0,0,4,0" />
-                                    <Button Content="TARA"
-                                            Command="{Binding RefreshVideoDevicesCommand}"
-                                            Style="{StaticResource GhostPillButtonStyle}"
-                                            Padding="8,4"
-                                            FontSize="10"
-                                            Margin="0,0,4,0" />
-                                </StackPanel>
+                                              FontWeight="Bold"
+                                              Cursor="Hand">
+                                    <ToggleButton.Style>
+                                        <Style TargetType="{x:Type ToggleButton}">
+                                            <Setter Property="Background" Value="#000000" />
+                                            <Setter Property="Foreground" Value="#FFFFFF" />
+                                            <Setter Property="BorderBrush" Value="#FFFFFF" />
+                                            <Setter Property="BorderThickness" Value="1" />
+                                            <Setter Property="MinHeight" Value="30" />
+                                            <Setter Property="Content" Value="ARAÇ TAKİP: KAPALI" />
+                                            <Setter Property="Template">
+                                                <Setter.Value>
+                                                    <ControlTemplate TargetType="{x:Type ToggleButton}">
+                                                        <Border x:Name="BtnBorder"
+                                                                Background="{TemplateBinding Background}"
+                                                                BorderBrush="{TemplateBinding BorderBrush}"
+                                                                BorderThickness="{TemplateBinding BorderThickness}"
+                                                                CornerRadius="6"
+                                                                Padding="{TemplateBinding Padding}">
+                                                            <ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center" />
+                                                        </Border>
+                                                        <ControlTemplate.Triggers>
+                                                            <Trigger Property="IsChecked" Value="True">
+                                                                <Setter TargetName="BtnBorder" Property="Background" Value="#FFFFFF" />
+                                                                <Setter TargetName="BtnBorder" Property="BorderBrush" Value="#FFFFFF" />
+                                                                <Setter Property="Foreground" Value="#000000" />
+                                                                <Setter Property="Content" Value="● ARAÇ TAKİP: AÇIK" />
+                                                            </Trigger>
+                                                        </ControlTemplate.Triggers>
+                                                    </ControlTemplate>
+                                                </Setter.Value>
+                                            </Setter>
+                                        </Style>
+                                    </ToggleButton.Style>
+                                </ToggleButton>
+                            </StackPanel>
 
-                                <Button Content="OYNAT"
-                                        Command="{Binding StartVideoCommand}"
-                                        Style="{StaticResource GhostPillButtonStyle}"
-                                        Padding="10,4"
-                                        FontSize="10"
-                                        Margin="0,0,4,0" />
-                                <Button Content="DUR"
-                                        Command="{Binding StopVideoCommand}"
-                                        Style="{StaticResource GhostPillButtonStyle}"
-                                        Padding="10,4"
-                                        FontSize="10"
-                                        Margin="0,0,6,0" />
-                                <Button Content="{Binding SwapButtonText}"
-                                        Command="{Binding SwapMapAndCameraCommand}"
-                                        Style="{StaticResource GhostPillButtonStyle}"
-                                        Padding="12,4"
-                                        FontSize="10" />
-                            </StackPanel>
-                        </WrapPanel>
-                    </Border>
-
-                    <!-- SAFETY CONFIRMATION BANNER -->
-                    <Border Background="#0A0A0A"
-                            BorderBrush="#FF3B30"
-                            BorderThickness="1"
-                            CornerRadius="4"
-                            Margin="10,8,10,0"
-                            Padding="12,8"
-                            Visibility="{Binding HasPendingSafetyAction, Converter={StaticResource BoolToVisibility}}">
-                        <Grid>
-                            <Grid.ColumnDefinitions>
-                                <ColumnDefinition Width="*" />
-                                <ColumnDefinition Width="Auto" />
-                            </Grid.ColumnDefinitions>
-                            <StackPanel Grid.Column="0" VerticalAlignment="Center">
-                                <TextBlock Text="{Binding PendingSafetyAction.Title}"
-                                           FontFamily="{StaticResource DisplayFontFamily}"
-                                           FontSize="13"
-                                           FontWeight="Bold"
-                                           Foreground="#FF3B30" />
-                                <TextBlock Text="{Binding PendingSafetyAction.Description}"
-                                           FontFamily="{StaticResource UiFontFamily}"
-                                           FontSize="12"
-                                           Foreground="#FFFFFF"
-                                           TextWrapping="Wrap" />
-                            </StackPanel>
-                            <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center" Margin="12,0,0,0">
-                                <Button Content="ONAYLA"
-                                        Command="{Binding ConfirmSafetyActionCommand}"
-                                        Style="{StaticResource DangerGhostPillButtonStyle}"
-                                        Padding="16,6"
-                                        FontSize="11"
-                                        Margin="0,0,6,0" />
-                                <Button Content="İPTAL"
-                                        Command="{Binding CancelSafetyActionCommand}"
-                                        Style="{StaticResource GhostPillButtonStyle}"
-                                        Padding="14,6"
-                                        FontSize="11" />
-                            </StackPanel>
-                        </Grid>
+                            <Button DockPanel.Dock="Right"
+                                    Content="{Binding SwapButtonText}"
+                                    Command="{Binding SwapMapAndCameraCommand}"
+                                    Style="{StaticResource GhostPillButtonStyle}"
+                                    MinHeight="30"
+                                    Padding="12,4"
+                                    FontSize="10.5"
+                                    VerticalAlignment="Center" />
+                        </DockPanel>
                     </Border>
 
                     <!-- GEOFENCE BREACH ALERT BANNER -->
@@ -683,23 +1035,34 @@
                     </Border>
                 </StackPanel>
 
-                <!-- MAIN STAGE: FULL-BLEED MAP / CAMERA SWAP + 8PX ROUNDED PIP IN BOTTOM-RIGHT -->
+                <!-- MAIN STAGE: PRIMARY MAP/CAMERA + NON-OVERLAPPING RIGHT CAMERA, COMPACT FPV HUD & FILTERED LIVE LOG DOCK -->
                 <Grid x:Name="StageGrid" Grid.Row="1" Background="#000000">
+                    <Grid.ColumnDefinitions>
+                        <ColumnDefinition Width="*" />
+                        <ColumnDefinition x:Name="RightDockColumn" Width="328" />
+                    </Grid.ColumnDefinitions>
+                    <Grid.RowDefinitions>
+                        <RowDefinition x:Name="StageCameraRow" Height="224" MinHeight="84" />
+                        <RowDefinition Height="5" />
+                        <RowDefinition Height="Auto" />
+                        <RowDefinition x:Name="StageLogRow" Height="*" MinHeight="0" />
+                    </Grid.RowDefinitions>
+
                     <controls:MapHostControl x:Name="MapHost">
                         <controls:MapHostControl.Style>
                             <Style TargetType="{x:Type controls:MapHostControl}">
+                                <Setter Property="Grid.Column" Value="0" />
+                                <Setter Property="Grid.Row" Value="0" />
+                                <Setter Property="Grid.RowSpan" Value="4" />
                                 <Setter Property="HorizontalAlignment" Value="Stretch" />
                                 <Setter Property="VerticalAlignment" Value="Stretch" />
                                 <Setter Property="Margin" Value="0" />
-                                <Setter Property="Panel.ZIndex" Value="0" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsCameraPrimary}" Value="True">
-                                        <Setter Property="Width" Value="340" />
-                                        <Setter Property="Height" Value="215" />
-                                        <Setter Property="HorizontalAlignment" Value="Right" />
-                                        <Setter Property="VerticalAlignment" Value="Bottom" />
-                                        <Setter Property="Margin" Value="0,0,16,16" />
-                                        <Setter Property="Panel.ZIndex" Value="10" />
+                                        <Setter Property="Grid.Column" Value="1" />
+                                        <Setter Property="Grid.Row" Value="0" />
+                                        <Setter Property="Grid.RowSpan" Value="1" />
+                                        <Setter Property="Margin" Value="8,8,8,2" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
@@ -709,57 +1072,239 @@
                     <controls:VideoFeedControl x:Name="VideoFeed">
                         <controls:VideoFeedControl.Style>
                             <Style TargetType="{x:Type controls:VideoFeedControl}">
-                                <Setter Property="Width" Value="340" />
-                                <Setter Property="Height" Value="215" />
-                                <Setter Property="HorizontalAlignment" Value="Right" />
-                                <Setter Property="VerticalAlignment" Value="Bottom" />
-                                <Setter Property="Margin" Value="0,0,16,16" />
-                                <Setter Property="Panel.ZIndex" Value="10" />
+                                <Setter Property="Grid.Column" Value="1" />
+                                <Setter Property="Grid.Row" Value="0" />
+                                <Setter Property="Grid.RowSpan" Value="1" />
+                                <Setter Property="HorizontalAlignment" Value="Stretch" />
+                                <Setter Property="VerticalAlignment" Value="Stretch" />
+                                <Setter Property="Margin" Value="8,8,8,2" />
                                 <Style.Triggers>
                                     <DataTrigger Binding="{Binding IsCameraPrimary}" Value="True">
-                                        <Setter Property="Width" Value="Auto" />
-                                        <Setter Property="Height" Value="Auto" />
-                                        <Setter Property="HorizontalAlignment" Value="Stretch" />
-                                        <Setter Property="VerticalAlignment" Value="Stretch" />
+                                        <Setter Property="Grid.Column" Value="0" />
+                                        <Setter Property="Grid.Row" Value="0" />
+                                        <Setter Property="Grid.RowSpan" Value="4" />
                                         <Setter Property="Margin" Value="0" />
-                                        <Setter Property="Panel.ZIndex" Value="0" />
                                     </DataTrigger>
                                 </Style.Triggers>
                             </Style>
                         </controls:VideoFeedControl.Style>
                     </controls:VideoFeedControl>
+
+                    <!-- CAMERA / LOG HORIZONTAL SPLITTER -->
+                    <GridSplitter Grid.Column="1"
+                                  Grid.Row="1"
+                                  Height="5"
+                                  HorizontalAlignment="Stretch"
+                                  VerticalAlignment="Center"
+                                  Background="#14151B"
+                                  ShowsPreview="True"
+                                  Margin="8,0"
+                                  Visibility="{Binding IsRightLogPanelVisible, Converter={StaticResource BoolToVisibility}}" />
+
+                    <!-- COMPACT FPV / NARROW-WINDOW HUD FALLBACK -->
+                    <Border Grid.Column="1"
+                            Grid.Row="2"
+                            Margin="8,2,8,2"
+                            Background="#050508"
+                            BorderBrush="#3A3A3F"
+                            BorderThickness="1"
+                            CornerRadius="6">
+                        <Border.Style>
+                            <Style TargetType="{x:Type Border}">
+                                <Setter Property="Visibility" Value="Collapsed" />
+                                <Style.Triggers>
+                                    <DataTrigger Binding="{Binding IsCameraPrimary}" Value="True">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                    <DataTrigger Binding="{Binding IsLeftPanelVisible}" Value="False">
+                                        <Setter Property="Visibility" Value="Visible" />
+                                    </DataTrigger>
+                                </Style.Triggers>
+                            </Style>
+                        </Border.Style>
+                        <controls:HudControl Snapshot="{Binding HudSnapshot}"
+                                             VehicleProfile="{Binding ActiveProfile}"
+                                             Height="{Binding CompactHudHeight}"
+                                             Margin="4" />
+                    </Border>
+
+                    <!-- RIGHT DOCK BOTTOM: FILTERED & GROUPED LIVE SYSTEM LOGS -->
+                    <Border Grid.Column="1"
+                            Grid.Row="3"
+                            Background="#0A0A0D"
+                            BorderBrush="#3A3A3F"
+                            BorderThickness="1"
+                            CornerRadius="6"
+                            Margin="8,2,8,8"
+                            Visibility="{Binding IsRightLogPanelVisible, Converter={StaticResource BoolToVisibility}}">
+                        <Grid>
+                            <Grid.RowDefinitions>
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="Auto" />
+                                <RowDefinition Height="*" />
+                            </Grid.RowDefinitions>
+
+                            <Border Grid.Row="0"
+                                    Background="#000000"
+                                    BorderBrush="#24242B"
+                                    BorderThickness="0,0,0,1"
+                                    Padding="10,6"
+                                    CornerRadius="6,6,0,0">
+                                <DockPanel>
+                                    <Button DockPanel.Dock="Right"
+                                            Content="⛶ BÜYÜT"
+                                            ToolTip="Günlüğü büyük pencerede aç"
+                                            Click="OnOpenLogPopupClick"
+                                            Style="{StaticResource GhostPillButtonStyle}"
+                                            MinHeight="24"
+                                            Padding="8,2"
+                                            FontSize="10"
+                                            Margin="8,0,0,0" />
+                                    <TextBlock DockPanel.Dock="Right"
+                                               Text="{Binding FilteredLogs.Count, StringFormat={}{0} KAYIT}"
+                                               FontFamily="{StaticResource DisplayFontFamily}"
+                                               FontSize="11"
+                                               Foreground="#8E8E98"
+                                               VerticalAlignment="Center" />
+                                    <TextBlock Text="CANLI GÜNLÜK"
+                                               FontFamily="{StaticResource DisplayFontFamily}"
+                                               FontSize="11.5"
+                                               FontWeight="Bold"
+                                               Foreground="#FFFFFF"
+                                               VerticalAlignment="Center" />
+                                </DockPanel>
+                            </Border>
+
+                            <!-- SEARCH & SEVERITY FILTER BAR -->
+                            <Grid Grid.Row="1" Margin="6,5,6,3">
+                                <Grid.ColumnDefinitions>
+                                    <ColumnDefinition Width="*" />
+                                    <ColumnDefinition Width="6" />
+                                    <ColumnDefinition Width="86" />
+                                </Grid.ColumnDefinitions>
+                                <TextBox Grid.Column="0"
+                                         Text="{Binding LogSearchText, UpdateSourceTrigger=PropertyChanged}"
+                                         ToolTip="Günlüklerde ara..."
+                                         Style="{StaticResource SpaceXTextBoxStyle}"
+                                         Height="26"
+                                         MinHeight="26"
+                                         Padding="6,1"
+                                         FontSize="11.5" />
+                                <ComboBox Grid.Column="2"
+                                          ItemsSource="{Binding LogSeverityFilters}"
+                                          SelectedItem="{Binding SelectedLogSeverityFilter}"
+                                          Style="{StaticResource SpaceXComboBoxStyle}"
+                                          Height="26"
+                                          MinHeight="26"
+                                          Padding="6,1"
+                                          FontSize="11" />
+                            </Grid>
+
+                            <ListBox Grid.Row="2"
+                                     ItemsSource="{Binding FilteredLogs}"
+                                     ItemContainerStyle="{StaticResource SpaceXLogItemStyle}"
+                                     Background="#050508"
+                                     BorderThickness="0"
+                                     Padding="6,4"
+                                     VirtualizingPanel.IsVirtualizing="True"
+                                     VirtualizingPanel.VirtualizationMode="Recycling"
+                                     ScrollViewer.CanContentScroll="True"
+                                     ScrollViewer.HorizontalScrollBarVisibility="Disabled">
+                                <ListBox.ItemTemplate>
+                                    <DataTemplate>
+                                        <TextBlock Text="{Binding DisplayLine}"
+                                                   FontFamily="Segoe UI, Consolas, Arial, sans-serif"
+                                                   FontSize="13"
+                                                   LineHeight="18.5"
+                                                   TextOptions.TextFormattingMode="Display"
+                                                   TextWrapping="Wrap">
+                                            <TextBlock.Style>
+                                                <Style TargetType="{x:Type TextBlock}">
+                                                    <Setter Property="Foreground" Value="#F2F2FA" />
+                                                    <Style.Triggers>
+                                                        <DataTrigger Binding="{Binding Severity}" Value="Warning">
+                                                            <Setter Property="Foreground" Value="#FFD60A" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Severity}" Value="Error">
+                                                            <Setter Property="Foreground" Value="#FF453A" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Severity}" Value="Critical">
+                                                            <Setter Property="Foreground" Value="#FF453A" />
+                                                        </DataTrigger>
+                                                        <DataTrigger Binding="{Binding Severity}" Value="Emergency">
+                                                            <Setter Property="Foreground" Value="#FF453A" />
+                                                        </DataTrigger>
+                                                    </Style.Triggers>
+                                                </Style>
+                                            </TextBlock.Style>
+                                        </TextBlock>
+                                    </DataTemplate>
+                                </ListBox.ItemTemplate>
+                            </ListBox>
+                        </Grid>
+                    </Border>
                 </Grid>
 
-                <!-- COLLAPSIBLE BOTTOM MISSION & GEOFENCE DRAWER -->
-                <Border Grid.Row="2"
+                <!-- STAGE / BOTTOM MISSION DRAWER HORIZONTAL SPLITTER -->
+                <GridSplitter Grid.Row="2"
+                              Height="5"
+                              HorizontalAlignment="Stretch"
+                              VerticalAlignment="Center"
+                              Background="#14151B"
+                              ShowsPreview="True"
+                              Visibility="{Binding IsMissionDrawerExpanded, Converter={StaticResource BoolToVisibility}}" />
+
+                <!-- COLLAPSIBLE & RESIZABLE BOTTOM MISSION DRAWER -->
+                <Border Grid.Row="3"
                         Background="#000000"
                         BorderBrush="#3A3A3F"
                         BorderThickness="0,1,0,0">
                     <Grid>
                         <Grid.RowDefinitions>
-                            <RowDefinition Height="34" />
-                            <RowDefinition Height="Auto" />
+                            <RowDefinition Height="36" />
+                            <RowDefinition Height="*" />
                         </Grid.RowDefinitions>
 
-                        <Border Grid.Row="0" Padding="10,0">
+                        <Border Grid.Row="0" Padding="12,0">
                             <DockPanel LastChildFill="False">
                                 <StackPanel DockPanel.Dock="Left" Orientation="Horizontal" VerticalAlignment="Center">
-                                    <TextBlock Text="GÖREV &amp; GEOFENCE PLANLAYICI"
+                                    <TextBlock Text="GÖREV PLANLAYICI"
                                                FontFamily="{StaticResource DisplayFontFamily}"
                                                FontSize="12"
                                                FontWeight="Bold"
                                                Foreground="#FFFFFF"
                                                VerticalAlignment="Center"
-                                               Margin="0,0,12,0" />
+                                               Margin="0,0,14,0" />
                                     <TextBlock Text="{Binding MissionItems.Count, StringFormat={}{0} WAYPOINT}"
                                                Style="{StaticResource MicroCapTextStyle}"
                                                FontSize="11"
                                                VerticalAlignment="Center"
-                                               Margin="0,0,12,0" />
-                                    <TextBlock Text="{Binding GeofenceStatusSummary}"
-                                               Style="{StaticResource MicroCapTextStyle}"
+                                               Margin="0,0,14,0" />
+                                    <TextBlock Text="{Binding MissionMetricsSummaryText}"
+                                               FontFamily="{StaticResource DisplayFontFamily}"
                                                FontSize="11"
-                                               VerticalAlignment="Center" />
+                                               Foreground="#38BDF8"
+                                               VerticalAlignment="Center"
+                                               Margin="0,0,14,0" />
+                                    <TextBlock Text="{Binding MissionSyncStateText}"
+                                               FontFamily="{StaticResource DisplayFontFamily}"
+                                               FontSize="10.5"
+                                               FontWeight="Bold"
+                                               VerticalAlignment="Center">
+                                        <TextBlock.Style>
+                                            <Style TargetType="{x:Type TextBlock}">
+                                                <Setter Property="Foreground" Value="#34C759" />
+                                                <Style.Triggers>
+                                                    <DataTrigger Binding="{Binding IsMissionDirty}" Value="True">
+                                                        <Setter Property="Foreground" Value="#FFCC00" />
+                                                    </DataTrigger>
+                                                    <DataTrigger Binding="{Binding MissionItems.Count}" Value="0">
+                                                        <Setter Property="Foreground" Value="#6E7686" />
+                                                    </DataTrigger>
+                                                </Style.Triggers>
+                                            </Style>
+                                        </TextBlock.Style>
+                                    </TextBlock>
                                 </StackPanel>
 
                                 <Button DockPanel.Dock="Right"
@@ -782,7 +1327,7 @@
                         </Border>
 
                         <controls:MissionPlannerPanel Grid.Row="1"
-                                                      Height="235"
+                                                      MinHeight="96"
                                                       Visibility="{Binding IsMissionDrawerExpanded, Converter={StaticResource BoolToVisibility}}" />
                     </Grid>
                 </Border>

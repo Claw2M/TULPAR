@@ -11,11 +11,13 @@
       color-scheme: dark;
       --canvas-night: #000000;
       --canvas-night-soft: #0a0a0a;
+      --layer-panel-bg: #0a0a0d;
       --hairline-dark: #3a3a3f;
       --on-primary: #ffffff;
       --on-primary-mute: #f0f0fa;
       --ink-mute: #8e8e93;
       --warning-amber: #ffcc00;
+      --sky-accent: #38bdf8;
       --font-ui: "D-DIN", "Arial Narrow", Arial, Verdana, sans-serif;
       --font-bold: "D-DIN-Bold", "D-DIN", "Arial Narrow", Arial, Verdana, sans-serif;
     }
@@ -76,6 +78,18 @@
       color: var(--warning-amber);
     }
 
+    .tulpar-hud-measure {
+      color: var(--warning-amber);
+      font-family: var(--font-bold);
+      font-weight: 700;
+      border-left: 1px solid var(--hairline-dark);
+      padding-left: 10px;
+    }
+
+    .tulpar-hud-measure[hidden] {
+      display: none;
+    }
+
     .tulpar-vehicle-marker {
       width: 36px;
       height: 36px;
@@ -108,25 +122,172 @@
     }
 
     .tulpar-wp-marker {
-      min-width: 24px;
-      height: 24px;
-      padding: 0 5px;
+      min-width: 26px;
+      height: 26px;
+      padding: 0 6px;
       background-color: var(--canvas-night);
-      border: 1px solid var(--on-primary);
+      border: 1.5px solid var(--on-primary);
       border-radius: 9999px;
       color: var(--on-primary);
       font-family: var(--font-bold);
       font-weight: 700;
       font-size: 11px;
-      line-height: 22px;
+      line-height: 23px;
       text-align: center;
       font-variant-numeric: tabular-nums;
-      cursor: grab;
+      cursor: pointer;
+      transition: transform 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+    }
+
+    .tulpar-wp-marker:hover {
+      transform: scale(1.14);
+      background-color: var(--on-primary);
+      color: var(--canvas-night);
     }
 
     .tulpar-wp-marker:active {
       cursor: grabbing;
       background-color: var(--on-primary);
+      color: var(--canvas-night);
+    }
+
+    @keyframes tulpar-wp-pulse {
+      0%, 100% {
+        box-shadow: 0 0 0 2px rgba(255, 204, 0, 0.78);
+      }
+      50% {
+        box-shadow: 0 0 0 6px rgba(255, 204, 0, 0.18);
+      }
+    }
+
+    .tulpar-wp-marker.is-active {
+      border-color: var(--warning-amber);
+      color: var(--warning-amber);
+      animation: tulpar-wp-pulse 1.5s ease-in-out infinite;
+    }
+
+    .tulpar-wp-marker.is-active:hover,
+    .tulpar-wp-marker.is-active:active {
+      background-color: var(--warning-amber);
+      color: var(--canvas-night);
+    }
+
+    .tulpar-wp-marker.is-selected {
+      border-color: #38BDF8;
+      color: #38BDF8;
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.88);
+      transform: scale(1.18);
+      z-index: 2;
+    }
+
+    .tulpar-wp-marker.is-selected:hover,
+    .tulpar-wp-marker.is-selected:active {
+      background-color: #38BDF8;
+      color: var(--canvas-night);
+      transform: scale(1.22);
+    }
+
+    .tulpar-wp-marker.is-active.is-selected {
+      border-color: var(--warning-amber);
+      color: var(--warning-amber);
+      box-shadow: 0 0 0 2px rgba(56, 189, 248, 0.92), 0 0 0 5px rgba(255, 204, 0, 0.36);
+      transform: scale(1.18);
+      z-index: 3;
+    }
+
+    .tulpar-layers-control {
+      position: absolute;
+      top: 10px;
+      right: 48px;
+      z-index: 5;
+      display: flex;
+      flex-direction: column;
+      align-items: flex-end;
+      gap: 6px;
+    }
+
+    .tulpar-layers-toggle {
+      appearance: none;
+      display: inline-flex;
+      align-items: center;
+      gap: 6px;
+      height: 29px;
+      padding: 0 11px;
+      background-color: var(--layer-panel-bg);
+      border: 1px solid var(--hairline-dark);
+      border-radius: 9999px;
+      color: var(--on-primary);
+      font-family: var(--font-bold);
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.9px;
+      text-transform: uppercase;
+      cursor: pointer;
+      transition: border-color 0.12s ease, background-color 0.12s ease, color 0.12s ease;
+    }
+
+    .tulpar-layers-toggle:hover,
+    .tulpar-layers-toggle[aria-expanded="true"] {
+      border-color: var(--sky-accent);
+      color: var(--sky-accent);
+    }
+
+    .tulpar-layers-panel {
+      min-width: 176px;
+      padding: 8px 10px;
+      background-color: #0A0A0D;
+      border: 1px solid var(--hairline-dark);
+      border-radius: 6px;
+      display: flex;
+      flex-direction: column;
+      gap: 6px;
+    }
+
+    .tulpar-layers-panel[hidden] {
+      display: none;
+    }
+
+    .tulpar-layers-item {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 11.5px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+      color: var(--on-primary-mute);
+      cursor: pointer;
+    }
+
+    .tulpar-layers-item input[type="checkbox"] {
+      margin: 0;
+      width: 13px;
+      height: 13px;
+      accent-color: #38BDF8;
+      cursor: pointer;
+    }
+
+    .tulpar-wp-midpoint {
+      width: 16px;
+      height: 16px;
+      border-radius: 9999px;
+      background-color: rgba(10, 10, 10, 0.86);
+      border: 1px solid rgba(240, 240, 250, 0.55);
+      color: var(--on-primary-mute);
+      font-family: var(--font-bold);
+      font-weight: 700;
+      font-size: 12px;
+      line-height: 13px;
+      text-align: center;
+      cursor: pointer;
+      opacity: 0.78;
+      transition: transform 0.12s ease, opacity 0.12s ease, background-color 0.12s ease, color 0.12s ease, border-color 0.12s ease;
+    }
+
+    .tulpar-wp-midpoint:hover {
+      opacity: 1;
+      transform: scale(1.22);
+      background-color: var(--on-primary);
+      border-color: var(--on-primary);
       color: var(--canvas-night);
     }
 
@@ -142,6 +303,28 @@
     .tulpar-fence-marker:active {
       cursor: grabbing;
       background-color: var(--warning-amber);
+    }
+
+    .tulpar-rally-marker {
+      min-width: 24px;
+      height: 24px;
+      padding: 0 5px;
+      background-color: rgba(16, 12, 8, 0.92);
+      border: 2px solid #FF9500;
+      border-radius: 6px;
+      color: #FF9500;
+      font-family: var(--font-bold);
+      font-weight: 700;
+      font-size: 10px;
+      line-height: 20px;
+      text-align: center;
+      cursor: grab;
+    }
+
+    .tulpar-rally-marker:active {
+      cursor: grabbing;
+      background-color: #FF9500;
+      color: #000000;
     }
 
     .tulpar-bounds-box {
@@ -234,9 +417,42 @@
     }
 
     .maplibregl-ctrl-attrib {
-      background-color: rgba(10, 10, 10, 0.78);
+      background-color: rgba(10, 10, 10, 0.84);
       color: var(--ink-mute);
       font-size: 10px;
+    }
+
+    .maplibregl-ctrl.maplibregl-ctrl-attrib,
+    .maplibregl-ctrl-attrib.maplibregl-compact,
+    .maplibregl-ctrl-attrib.maplibregl-compact-show {
+      background-color: rgba(10, 10, 10, 0.84);
+      border: 1px solid var(--hairline-dark);
+      border-radius: 4px;
+      color: var(--ink-mute);
+      box-shadow: none;
+    }
+
+    .maplibregl-ctrl-attrib a {
+      color: var(--on-primary-mute);
+    }
+
+    .maplibregl-ctrl-attrib-button {
+      background-color: transparent !important;
+      filter: invert(0.92);
+    }
+
+    .maplibregl-ctrl-scale {
+      background-color: rgba(10, 10, 10, 0.84) !important;
+      border-color: var(--hairline-dark) !important;
+      border-width: 1px !important;
+      border-top: none !important;
+      border-radius: 0 0 4px 4px;
+      color: var(--on-primary-mute) !important;
+      font-family: var(--font-ui) !important;
+      font-size: 10px !important;
+      font-variant-numeric: tabular-nums;
+      letter-spacing: 0.6px;
+      padding: 1px 6px !important;
     }
   </style>
 </head>
@@ -244,9 +460,43 @@
   <div id="map" aria-label="Taktik Harita"></div>
   <div id="bounds-box" class="tulpar-bounds-box" aria-hidden="true"></div>
 
+  <div id="layers-control" class="tulpar-layers-control">
+    <button id="layers-toggle-btn"
+            type="button"
+            class="tulpar-layers-toggle"
+            aria-expanded="false"
+            aria-controls="layers-panel">
+      <span aria-hidden="true">☰</span>
+      <span>KATMANLAR</span>
+    </button>
+    <div id="layers-panel" class="tulpar-layers-panel" hidden role="group" aria-label="Harita Katman Görünürlüğü">
+      <label class="tulpar-layers-item">
+        <input type="checkbox" checked data-layer-group="trail" />
+        <span>Uçuş İzi (Trail)</span>
+      </label>
+      <label class="tulpar-layers-item">
+        <input type="checkbox" checked data-layer-group="mission" />
+        <span>Görev Rotası</span>
+      </label>
+      <label class="tulpar-layers-item">
+        <input type="checkbox" checked data-layer-group="fence" />
+        <span>Geofence</span>
+      </label>
+      <label class="tulpar-layers-item">
+        <input type="checkbox" checked data-layer-group="markers" />
+        <span>WP İşaretleri</span>
+      </label>
+      <label class="tulpar-layers-item">
+        <input type="checkbox" checked data-layer-group="rally" />
+        <span>Rally Noktaları (R)</span>
+      </label>
+    </div>
+  </div>
+
   <div class="tulpar-hud-bar" aria-live="polite">
     <span id="hud-mode" class="tulpar-hud-mode" data-editing="false">İZLEME</span>
     <span id="hud-coords">39.933400, 32.859700 · Z6.0</span>
+    <span id="hud-measure" class="tulpar-hud-measure" hidden>ÖLÇÜM: 0 m</span>
   </div>
 
   <div id="ctx-anchor" aria-hidden="true"></div>
@@ -255,6 +505,10 @@
       <button type="button" data-action="guided">BURAYA GİT (GUIDED)</button>
       <button type="button" data-action="mission-add">GÖREV NOKTASI EKLE</button>
       <button type="button" data-action="fence-add">GEOFENCE KÖŞESİ EKLE</button>
+      <button type="button" data-action="rally-add">RALLY (ACİL İNİŞ) EKLE</button>
+      <hr />
+      <button type="button" data-action="measure-toggle">MESAFE ÖLÇ / BİTİR</button>
+      <button type="button" data-action="measure-clear">ÖLÇÜMÜ TEMİZLE</button>
       <hr />
       <button type="button" data-action="center-vehicle">ARACA ODAKLAN</button>
     </div>

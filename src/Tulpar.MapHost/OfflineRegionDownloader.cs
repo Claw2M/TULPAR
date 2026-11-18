@@ -25,12 +25,18 @@ public sealed class OfflineRegionDownloader
     private const double MinMercatorLat = -85.05112878;
     private const double MaxMercatorLat = 85.05112878;
     private const int MaxSupportedZoom = 22;
+    private static readonly TimeSpan DefaultRequestTimeout = TimeSpan.FromSeconds(15);
 
     private readonly TileCacheStore _cache;
     private readonly HttpClient _httpClient;
     private readonly int _delayMsPerRequest;
+    private readonly TimeSpan _requestTimeout;
 
-    public OfflineRegionDownloader(TileCacheStore cache, HttpClient httpClient, int delayMsPerRequest = 75)
+    public OfflineRegionDownloader(
+        TileCacheStore cache,
+        HttpClient httpClient,
+        int delayMsPerRequest = 75,
+        TimeSpan? requestTimeout = null)
     {
         ArgumentNullException.ThrowIfNull(cache);
         ArgumentNullException.ThrowIfNull(httpClient);
@@ -39,6 +45,9 @@ public sealed class OfflineRegionDownloader
         _cache = cache;
         _httpClient = httpClient;
         _delayMsPerRequest = delayMsPerRequest;
+        _requestTimeout = requestTimeout is { TotalMilliseconds: > 0 } customTimeout
+            ? customTimeout
+            : DefaultRequestTimeout;
     }
 
     public static IReadOnlyList<(int Z, int X, int Y)> EnumerateTiles(
@@ -136,9 +145,13 @@ public sealed class OfflineRegionDownloader
         CancellationToken ct)
     {
         string url = TileFormatHelper.FormatTileUrl(provider.UrlTemplate, z, x, y);
+        CancellationTokenSource? timeoutCts = null;
 
         try
         {
+            timeoutCts = CancellationTokenSource.CreateLinkedTokenSource(ct);
+            timeoutCts.CancelAfter(_requestTimeout);
+
             using var request = new HttpRequestMessage(HttpMethod.Get, url);
             if (_httpClient.DefaultRequestHeaders.UserAgent.Count == 0)
             {
@@ -146,7 +159,7 @@ public sealed class OfflineRegionDownloader
             }
 
             using HttpResponseMessage response = await _httpClient
-                .SendAsync(request, HttpCompletionOption.ResponseContentRead, ct)
+                .SendAsync(request, HttpCompletionOption.ResponseContentRead, timeoutCts.Token)
                 .ConfigureAwait(false);
 
             if (!response.IsSuccessStatusCode)
@@ -154,7 +167,7 @@ public sealed class OfflineRegionDownloader
                 return false;
             }
 
-            byte[] bytes = await response.Content.ReadAsByteArrayAsync(ct).ConfigureAwait(false);
+            byte[] bytes = await response.Content.ReadAsByteArrayAsync(timeoutCts.Token).ConfigureAwait(false);
             if (bytes.Length == 0)
             {
                 return false;
@@ -163,21 +176,30 @@ public sealed class OfflineRegionDownloader
             await _cache.PutTileAsync(provider.Id, z, x, y, bytes, ct).ConfigureAwait(false);
             return true;
         }
+        catch (ObjectDisposedException) when (ct.IsCancellationRequested)
+        {
+            throw new OperationCanceledException(ct);
+        }
         catch (OperationCanceledException) when (ct.IsCancellationRequested)
         {
             throw;
         }
-        catch (HttpRequestException)
+        catch (OperationCanceledException)
         {
+            // Per-request timeout elapsed without caller cancellation.
             return false;
         }
-        catch (TaskCanceledException)
+        catch (HttpRequestException)
         {
             return false;
         }
         catch (InvalidOperationException)
         {
             return false;
+        }
+        finally
+        {
+            timeoutCts?.Dispose();
         }
     }
 

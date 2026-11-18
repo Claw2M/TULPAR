@@ -1,3 +1,5 @@
+using System.Globalization;
+using Tulpar.Core.Mavlink;
 using Tulpar.Core.Session;
 using Tulpar.Core.Vehicles;
 
@@ -22,7 +24,13 @@ public sealed record HudRenderState(
     string ModeName,
     bool IsArmed,
     bool LinkLost,
-    string VehicleLabel);
+    string VehicleLabel,
+    double BatteryVoltageVolts = 0.0,
+    int BatteryRemainingPercent = -1,
+    GpsFixType GpsFixType = GpsFixType.NoGps,
+    int SatellitesVisible = 0,
+    int ThrottlePercent = 0,
+    int ActiveWaypointSeq = -1);
 
 /// <summary>
 /// Pure-math projection and angular normalization helpers for the adaptive vector <see cref="HudControl"/>.
@@ -63,8 +71,69 @@ public static class HudProjection
             ModeName: modeName,
             IsArmed: snap.IsArmed,
             LinkLost: snap.LinkLost,
-            VehicleLabel: vehicleLabel);
+            VehicleLabel: vehicleLabel,
+            BatteryVoltageVolts: double.IsFinite(snap.BatteryVoltageVolts) && snap.BatteryVoltageVolts > 0.0 ? snap.BatteryVoltageVolts : 0.0,
+            BatteryRemainingPercent: snap.BatteryRemainingPercent >= 0 ? Math.Clamp(snap.BatteryRemainingPercent, 0, 100) : -1,
+            GpsFixType: snap.GpsFixType,
+            SatellitesVisible: Math.Max(0, snap.SatellitesVisible),
+            ThrottlePercent: Math.Clamp(snap.ThrottlePercent, 0, 100),
+            ActiveWaypointSeq: snap.ActiveWaypointSeq);
     }
+
+    /// <summary>
+    /// Formats compact battery voltage and remaining capacity for HUD corner readout.
+    /// </summary>
+    public static string FormatBatteryReadout(double voltageVolts, int remainingPercent)
+    {
+        if (voltageVolts <= 0.0 && remainingPercent < 0)
+        {
+            return "--V / --%";
+        }
+
+        string voltPart = voltageVolts > 0.0
+            ? voltageVolts.ToString("0.0", CultureInfo.InvariantCulture)
+            : "--";
+        string pctPart = remainingPercent >= 0
+            ? Math.Clamp(remainingPercent, 0, 100).ToString(CultureInfo.InvariantCulture)
+            : "--";
+        return $"{voltPart}V / {pctPart}%";
+    }
+
+    /// <summary>
+    /// Formats compact GPS fix type and visible satellite count for HUD corner readout.
+    /// </summary>
+    public static string FormatGpsReadout(GpsFixType fixType, int satellitesVisible)
+    {
+        string fixShort = fixType switch
+        {
+            GpsFixType.NoGps => "NO GPS",
+            GpsFixType.NoFix => "NO FIX",
+            GpsFixType.Fix2D => "2D",
+            GpsFixType.Fix3D => "3D",
+            GpsFixType.Dgps => "DGPS",
+            GpsFixType.RtkFloat => "RTK FLT",
+            GpsFixType.RtkFixed => "RTK FIX",
+            GpsFixType.Static => "STATIC",
+            GpsFixType.Ppp => "PPP",
+            _ => fixType.ToString().ToUpperInvariant()
+        };
+
+        return $"{fixShort} / {Math.Max(0, satellitesVisible).ToString(CultureInfo.InvariantCulture)}";
+    }
+
+    /// <summary>
+    /// Formats compact throttle percentage for HUD corner readout.
+    /// </summary>
+    public static string FormatThrottleReadout(int throttlePercent) =>
+        $"THR %{Math.Clamp(throttlePercent, 0, 100).ToString(CultureInfo.InvariantCulture)}";
+
+    /// <summary>
+    /// Formats active waypoint sequence badge when <paramref name="activeWaypointSeq"/> is non-negative.
+    /// </summary>
+    public static string FormatActiveWaypointReadout(int activeWaypointSeq) =>
+        activeWaypointSeq >= 0
+            ? $"WP #{activeWaypointSeq.ToString(CultureInfo.InvariantCulture)}"
+            : string.Empty;
 
     /// <summary>
     /// Clamps pitch angle into [-45, 45] degrees for artificial horizon ladder rendering.

@@ -1,4 +1,6 @@
+using System.Buffers.Binary;
 using System.Globalization;
+using System.IO;
 using System.IO.Packaging;
 using System.Text.Json;
 using System.Windows;
@@ -166,6 +168,60 @@ public class MainViewModelTests
         Assert.Equal(399250180, targetMsg.LatInt);
         Assert.Equal(328369560, targetMsg.LonInt);
         Assert.Equal(targetAlt, targetMsg.Alt);
+
+        // 4. RequestTakeoff in STABILIZE -> confirmation-guarded, then switches to GUIDED before NavTakeoff
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.Quadrotor, MavAutopilot.ArduPilotMega, customMode: 0u, armed: true));
+        transport.ClearSent();
+        vm.TakeoffAltitudeMeters = 12.0;
+        vm.RequestTakeoff();
+        Assert.True(vm.HasPendingSafetyAction);
+        Assert.Equal(SafetyActionKind.Takeoff, vm.PendingSafetyAction!.Kind);
+        Assert.Equal(12f, vm.PendingSafetyAction!.AltitudeMeters);
+        Assert.Contains("GUIDED", vm.PendingSafetyAction!.Description, StringComparison.OrdinalIgnoreCase);
+        Assert.Empty(transport.GetSentFramesExcludingHeartbeat());
+
+        await vm.ConfirmSafetyActionAsync();
+        Assert.False(vm.HasPendingSafetyAction);
+        IReadOnlyList<MavlinkFrame> takeoffFrames = transport.GetSentFramesExcludingHeartbeat();
+        Assert.Equal(2, takeoffFrames.Count);
+        Assert.Equal(SetModeMessage.MsgId, takeoffFrames[0].MessageId);
+        SetModeMessage guidedSwitch = SetModeMessage.Decode(takeoffFrames[0]);
+        Assert.Equal(4u, guidedSwitch.CustomMode);
+        Assert.Equal(CommandLongMessage.MsgId, takeoffFrames[1].MessageId);
+        CommandLongMessage takeoffCmd = CommandLongMessage.Decode(takeoffFrames[1]);
+        Assert.Equal(MavCmd.NavTakeoff, takeoffCmd.Command);
+        Assert.Equal(12f, takeoffCmd.Param7);
+
+        // 5. RequestStartMission in STABILIZE -> confirmation-guarded, then switches to AUTO and sends MissionStart
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.Quadrotor, MavAutopilot.ArduPilotMega, customMode: 0u, armed: true));
+        transport.ClearSent();
+        vm.RequestStartMission();
+        Assert.True(vm.HasPendingSafetyAction);
+        Assert.Equal(SafetyActionKind.StartMission, vm.PendingSafetyAction!.Kind);
+        Assert.Empty(transport.GetSentFramesExcludingHeartbeat());
+
+        await vm.ConfirmSafetyActionAsync();
+        Assert.False(vm.HasPendingSafetyAction);
+        IReadOnlyList<MavlinkFrame> missionStartFrames = transport.GetSentFramesExcludingHeartbeat();
+        Assert.Equal(2, missionStartFrames.Count);
+        Assert.Equal(SetModeMessage.MsgId, missionStartFrames[0].MessageId);
+        SetModeMessage autoSwitch = SetModeMessage.Decode(missionStartFrames[0]);
+        Assert.Equal(3u, autoSwitch.CustomMode);
+        Assert.Equal(CommandLongMessage.MsgId, missionStartFrames[1].MessageId);
+        CommandLongMessage startCmd = CommandLongMessage.Decode(missionStartFrames[1]);
+        Assert.Equal(MavCmd.MissionStart, startCmd.Command);
+
+        // 6. ApplyCruiseSpeedAsync -> sends MAV_CMD_DO_CHANGE_SPEED with requested m/s
+        transport.ClearSent();
+        vm.CruiseSpeedMps = 8.5;
+        await vm.ApplyCruiseSpeedCommand.ExecuteAsync();
+        MavlinkFrame speedFrame = Assert.Single(transport.GetSentFramesExcludingHeartbeat());
+        Assert.Equal(CommandLongMessage.MsgId, speedFrame.MessageId);
+        CommandLongMessage speedCmd = CommandLongMessage.Decode(speedFrame);
+        Assert.Equal(MavCmd.DoChangeSpeed, speedCmd.Command);
+        Assert.Equal(1f, speedCmd.Param1);
+        Assert.Equal(8.5f, speedCmd.Param2);
+        Assert.Equal(-1f, speedCmd.Param3);
     }
 
     [Fact]
@@ -360,6 +416,313 @@ public class MainViewModelTests
         Assert.True(vm.HasPendingSafetyAction);
         Assert.Equal(SafetyActionKind.GuidedFlyHere, vm.PendingSafetyAction!.Kind);
         Assert.Empty(transport.GetSentFramesExcludingHeartbeat());
+    }
+
+    [Fact]
+    public async Task VisualMissionPlanner_SupportsSelectionInspectionAndContextualMetadata()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+
+        vm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "missionAdd", lat = 39.92, lon = 32.85 }));
+        vm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "missionAdd", lat = 39.93, lon = 32.86 }));
+
+        EditableMissionItem? inspected = null;
+        vm.MissionWaypointInspectRequested += item => inspected = item;
+
+        vm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "missionSelect", seq = 0 }));
+        Assert.Same(vm.MissionItems[0], vm.SelectedMissionItem);
+        Assert.Same(vm.MissionItems[0], inspected);
+
+        vm.MissionItems[0].Command = MavCmd.NavTakeoff;
+        Assert.Equal("TAKEOFF", vm.MissionItems[0].CommandShortLabel);
+        Assert.Equal("↑", vm.MissionItems[0].CommandBadgeGlyph);
+        Assert.Equal("MİN PİTCH (°)", vm.MissionItems[0].Param1Label);
+
+        vm.MissionItems[1].Command = MavCmd.NavLoiterTurns;
+        vm.MissionItems[1].Param1 = 3f;
+        vm.MissionItems[1].Param3 = 45f;
+        Assert.Equal("LOITER TUR", vm.MissionItems[1].CommandShortLabel);
+        Assert.Contains("TUR: 3", vm.MissionItems[1].ParamSummaryDisplay);
+
+        RunOnStaThread(() =>
+        {
+            MainViewModel panelVm = CreateTestViewModel(new FakeTransport(), out _);
+            try
+            {
+                panelVm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "missionAdd", lat = 39.92, lon = 32.85 }));
+                var panel = new MissionPlannerPanel { DataContext = panelVm };
+                panel.Measure(new Size(1100, 260));
+                panel.Arrange(new Rect(0, 0, 1100, 260));
+                panelVm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "missionSelect", seq = 0 }));
+                panel.DataContext = null;
+            }
+            finally
+            {
+                panelVm.DisposeAsync().AsTask().GetAwaiter().GetResult();
+            }
+        });
+    }
+
+    [Fact]
+    public async Task MissionPatternsAndLoopConnection_GenerateValidSpiralsAreaScanAndJumpLoops()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+
+        // 1) Expanding spiral (küçükten büyüğe): radius grows outward
+        var expanding = new MissionPatternRequest(
+            Kind: MissionPatternKind.ExpandingSpiral,
+            CenterLat: 39.9334,
+            CenterLon: 32.8597,
+            AltitudeMeters: 60f,
+            Frame: MavFrame.GlobalRelativeAltInt,
+            StartRadiusMeters: 20,
+            EndRadiusMeters: 120,
+            Turns: 2,
+            PointsPerTurn: 10);
+        int expCount = vm.ApplyMissionPattern(expanding, replaceExisting: true);
+        Assert.Equal(21, expCount);
+        double firstDist = HaversineMeters(39.9334, 32.8597, vm.MissionItems[0].Latitude, vm.MissionItems[0].Longitude);
+        double lastDist = HaversineMeters(39.9334, 32.8597, vm.MissionItems[^1].Latitude, vm.MissionItems[^1].Longitude);
+        Assert.InRange(firstDist, 18.0, 22.0);
+        Assert.InRange(lastDist, 115.0, 125.0);
+
+        // 2) Shrinking spiral (büyükten küçüğe): radius shrinks inward
+        var shrinking = expanding with { Kind = MissionPatternKind.ShrinkingSpiral };
+        int shrCount = vm.ApplyMissionPattern(shrinking, replaceExisting: true);
+        Assert.Equal(21, shrCount);
+        double shrFirst = HaversineMeters(39.9334, 32.8597, vm.MissionItems[0].Latitude, vm.MissionItems[0].Longitude);
+        double shrLast = HaversineMeters(39.9334, 32.8597, vm.MissionItems[^1].Latitude, vm.MissionItems[^1].Longitude);
+        Assert.True(shrFirst > shrLast + 80.0);
+
+        // 3) Polygon interior area scan + DO_JUMP loop back to first waypoint
+        vm.AddFencePoint(39.930, 32.855);
+        vm.AddFencePoint(39.930, 32.860);
+        vm.AddFencePoint(39.934, 32.860);
+        vm.AddFencePoint(39.934, 32.855);
+
+        var areaScan = new MissionPatternRequest(
+            Kind: MissionPatternKind.PolygonGridScan,
+            CenterLat: 39.932,
+            CenterLon: 32.8575,
+            AltitudeMeters: 45f,
+            Frame: MavFrame.GlobalRelativeAltInt,
+            GridSpacingMeters: 90,
+            IncludeTakeoff: true,
+            CloseLoopWithJump: true,
+            PolygonVertices: vm.FencePoints.Select(f => (f.Latitude, f.Longitude)).ToList());
+        int scanCount = vm.ApplyMissionPattern(areaScan, replaceExisting: true);
+        Assert.True(scanCount >= 6);
+        Assert.Equal(MavCmd.NavTakeoff, vm.MissionItems[0].Command);
+        Assert.Equal(MavCmd.DoJump, vm.MissionItems[^1].Command);
+        Assert.Equal(1f, vm.MissionItems[^1].Param1); // Jumps to first scan waypoint after takeoff
+        Assert.Equal(-1f, vm.MissionItems[^1].Param2);
+
+        // 4) Connect last waypoint to target #0 physically as closed loop
+        bool looped = vm.ConnectLastWaypointToTarget(targetSeq: 0, repeatCount: -1, useDoJump: false);
+        Assert.True(looped);
+        Assert.Equal(MavCmd.NavWaypoint, vm.MissionItems[^1].Command);
+        Assert.Equal(vm.MissionItems[0].Latitude, vm.MissionItems[^1].Latitude, 6);
+        Assert.Equal(vm.MissionItems[0].Longitude, vm.MissionItems[^1].Longitude, 6);
+    }
+
+    [Fact]
+    public async Task Phase2Integration_PreFlightParametersReplayMetricsAndAtomicImport_WorkEndToEnd()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+
+        // 1) Quick SITL 5760 preset configures TCP 127.0.0.1:5760 and connects
+        Assert.False(vm.IsPreFlightReady);
+        await vm.QuickConnectSitlAsync();
+        Assert.Equal(ConnectionKind.Tcp, vm.SelectedConnectionKind);
+        Assert.Equal("127.0.0.1", vm.TcpHost);
+        Assert.Equal(5760, vm.TcpPort);
+        Assert.True(vm.IsTransportConnected);
+
+        // 2) Pre-flight checks become ready when Heartbeat + GPS 3D Fix + Home + Battery + EKF healthy arrive
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.Quadrotor, MavAutopilot.ArduPilotMega, customMode: 0u));
+        byte[] gpsPkt = MavlinkEncoder.EncodeV2(1, 1, 10, new GpsRawIntMessage(
+            TimeUsec: 1000,
+            FixType: GpsFixType.Fix3D,
+            Lat: 399334000,
+            Lon: 328597000,
+            Alt: 850000,
+            Eph: 120,
+            Epv: 180,
+            Vel: 0,
+            Cog: 0,
+            SatellitesVisible: 11));
+        transport.EmitIncoming(gpsPkt);
+        byte[] sysPkt = MavlinkEncoder.EncodeV2(1, 1, 11, new SysStatusMessage(
+            OnboardControlSensorsPresent: 0x3FFF,
+            OnboardControlSensorsEnabled: 0x3FFF,
+            OnboardControlSensorsHealth: 0x3FFF,
+            Load: 120,
+            VoltageBattery: 24800,
+            CurrentBattery: 120,
+            BatteryRemaining: 88));
+        transport.EmitIncoming(sysPkt);
+        byte[] homePkt = MavlinkEncoder.EncodeV2(1, 1, 12, new HomePositionMessage(
+            Latitude: 399334000,
+            Longitude: 328597000,
+            Altitude: 850000,
+            X: 0f,
+            Y: 0f,
+            Z: 0f,
+            Q: null,
+            ApproachX: 0f,
+            ApproachY: 0f,
+            ApproachZ: 0f));
+        transport.EmitIncoming(homePkt);
+        Assert.True(vm.PreFlightChecks.Count >= 4);
+        Assert.True(vm.IsPreFlightReady);
+
+        // 3) Measure toggle + live drag preview + midpoint insert + route metrics
+        vm.ToggleMeasureMapEditCommand.Execute(null);
+        Assert.True(vm.IsMeasureMapPickActive);
+        vm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "missionAdd", lat = 39.920, lon = 32.850 }));
+        vm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "missionAdd", lat = 39.930, lon = 32.850 }));
+        Assert.True(vm.CurrentFlightMetrics.TotalDistanceMeters > 900.0);
+        Assert.False(string.IsNullOrWhiteSpace(vm.MissionMetricsSummaryText));
+
+        vm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "missionMovePreview", seq = 1, lat = 39.932, lon = 32.852 }));
+        Assert.Equal(39.932, vm.MissionItems[1].Latitude, 5);
+        vm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "missionInsertAfter", afterSeq = 0, lat = 39.925, lon = 32.851 }));
+        Assert.Equal(3, vm.MissionItems.Count);
+        Assert.Equal(39.925, vm.MissionItems[1].Latitude, 5);
+
+        // 4) Atomic malformed JSON import preserves existing mission items
+        int beforeCount = vm.MissionItems.Count;
+        Assert.ThrowsAny<Exception>(() => vm.ImportMissionJson("{\"items\":[{\"seq\":0,\"command\":16,\"latitude\":\"NaN\",\"longitude\":32.8}]}"));
+        Assert.Equal(beforeCount, vm.MissionItems.Count);
+
+        // 5) Parameter protocol refresh & filter + write
+        transport.OnOutgoingFrame = frame =>
+        {
+            if (frame.MessageId == ParamRequestListMessage.MsgId)
+            {
+                transport.EmitIncoming(MavlinkEncoder.EncodeV2(1, 1, 20, new ParamValueMessage(
+                    ParamId: "WPNAV_SPEED",
+                    ParamValue: 800f,
+                    ParamType: MavParamType.Real32,
+                    ParamCount: 1,
+                    ParamIndex: 0)));
+            }
+            else if (frame.MessageId == ParamSetMessage.MsgId)
+            {
+                ParamSetMessage set = ParamSetMessage.Decode(frame);
+                transport.EmitIncoming(MavlinkEncoder.EncodeV2(1, 1, 21, new ParamValueMessage(
+                    ParamId: set.ParamId,
+                    ParamValue: set.ParamValue,
+                    ParamType: set.ParamType,
+                    ParamCount: 1,
+                    ParamIndex: 0)));
+            }
+        };
+
+        await vm.RefreshParametersAsync();
+        vm.ParameterSearchText = "WPNAV";
+        VehicleParameterRow wpSpeed = Assert.Single(vm.FilteredParameters);
+        wpSpeed.EditValue = "1000";
+        await vm.ApplyParameterAsync(wpSpeed);
+        Assert.Equal(1000f, wpSpeed.NumericValue, 2);
+
+        // 6) .tlog Replay load, seek, and stop
+        string tempTlog = Path.Combine(Path.GetTempPath(), $"tulpar_test_{Guid.NewGuid():N}.tlog");
+        try
+        {
+            await using (FileStream fs = File.Create(tempTlog))
+            {
+                byte[] p1 = EncodeHeartbeat(1, MavType.FixedWing, MavAutopilot.ArduPilotMega, customMode: 5u, armed: true);
+                byte[] p2 = EncodeGlobalPosition(1, 39.955, 32.875, relAltMeters: 145.0, amslAltMeters: 920.0, headingCdeg: 9000, seq: 5);
+                Span<byte> ts = stackalloc byte[8];
+                BinaryPrimitives.WriteInt64BigEndian(ts, 1_700_000_000_000_000L);
+                fs.Write(ts);
+                fs.Write(p1);
+                BinaryPrimitives.WriteInt64BigEndian(ts, 1_700_000_001_000_000L);
+                fs.Write(ts);
+                fs.Write(p2);
+            }
+
+            await vm.LoadReplayFileAsync(tempTlog);
+            Assert.True(vm.IsReplayMode);
+            await vm.SeekReplayAsync(100);
+            Assert.Equal(145.0, vm.Snapshot.AltitudeRelativeMeters, 1);
+            await vm.StopReplayCommand.ExecuteAsync();
+            Assert.False(vm.IsReplayMode);
+        }
+        finally
+        {
+            if (File.Exists(tempTlog))
+            {
+                File.Delete(tempTlog);
+            }
+        }
+    }
+
+    [Fact]
+    public async Task P0ToP2_TelemetryHonestyHealthCenterLogGroupingSyncAndUndo_WorkCleanly()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+
+        // 1) Before connection: "--" honesty instead of fake 0.0, health waiting
+        Assert.False(vm.HasLiveTelemetry);
+        Assert.Equal("-- M", vm.AltitudeRelativeDisplay);
+        Assert.Equal("-- M/S", vm.GroundspeedDisplay);
+        Assert.Equal("---°", vm.HeadingDisplay);
+        Assert.Equal("--", vm.LatitudeDisplay);
+        Assert.Equal("VERİ YOK", vm.DataFreshnessText);
+        Assert.True(vm.SystemHealthItems.Count >= 6);
+
+        // 2) Connect & push live Heartbeat -> live numeric 0.0 appears
+        await vm.ConnectAsync();
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.Quadrotor, MavAutopilot.ArduPilotMega, customMode: 0u));
+        Assert.True(vm.HasLiveTelemetry);
+        Assert.Equal("0.0 M", vm.AltitudeRelativeDisplay);
+        Assert.NotEqual("VERİ YOK", vm.DataFreshnessText);
+
+        // 3) Log coalescing & search/severity filtering
+        int beforeLogCount = vm.Logs.Count;
+        vm.AppendSystemLog(MavSeverity.Warning, "KAMERA", "Video akışı başlatılıyor: udp://@:5600");
+        vm.AppendSystemLog(MavSeverity.Warning, "KAMERA", "Video akışı başlatılıyor: udp://@:5600");
+        Assert.Equal(beforeLogCount + 1, vm.Logs.Count);
+        Assert.Contains("(×2)", vm.Logs[0].DisplayLine);
+
+        vm.SelectedLogSeverityFilter = "UYARI";
+        Assert.Contains(vm.FilteredLogs, l => l.Source == "KAMERA" && l.RepeatCount == 2);
+        vm.LogSearchText = "YOK_BOYLE_BIR_KAYIT";
+        Assert.Empty(vm.FilteredLogs);
+        vm.LogSearchText = string.Empty;
+        vm.SelectedLogSeverityFilter = "TÜMÜ";
+
+        // 4) Mission sync state, SelectedMissionSeqChanged, and Undo stack (Ctrl+Z)
+        int? lastSelectedSeq = null;
+        vm.SelectedMissionSeqChanged += seq => lastSelectedSeq = seq;
+
+        Assert.Equal("GÖREV YOK", vm.MissionSyncStateText);
+        vm.AddMissionWaypoint(39.92, 32.85);
+        vm.AddMissionWaypoint(39.93, 32.86);
+        Assert.True(vm.IsMissionDirty);
+        Assert.Contains("TASLAK", vm.MissionSyncStateText, StringComparison.OrdinalIgnoreCase);
+        Assert.Equal(1, lastSelectedSeq);
+        Assert.True(vm.CanUndoMission);
+
+        vm.UndoMissionCommand.Execute(null);
+        Assert.Single(vm.MissionItems);
+    }
+
+    private static double HaversineMeters(double lat1, double lon1, double lat2, double lon2)
+    {
+        const double r = 6_371_000.0;
+        double dLat = (lat2 - lat1) * Math.PI / 180.0;
+        double dLon = (lon2 - lon1) * Math.PI / 180.0;
+        double a = Math.Sin(dLat / 2) * Math.Sin(dLat / 2) +
+                   Math.Cos(lat1 * Math.PI / 180.0) * Math.Cos(lat2 * Math.PI / 180.0) *
+                   Math.Sin(dLon / 2) * Math.Sin(dLon / 2);
+        return 2 * r * Math.Atan2(Math.Sqrt(a), Math.Sqrt(1 - a));
     }
 
     [Fact]
@@ -779,6 +1142,182 @@ public class MainViewModelTests
         vm.RequestGuidedFlyHere(39.95, 32.88);
         Assert.Equal(0f, vm.PendingSafetyAction!.AltitudeMeters);
         vm.CancelSafetyAction();
+    }
+
+    [Fact]
+    public async Task RallyPoints_MapBridgeAndMavlinkUploadDownloadClear_WorkEndToEnd()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+        await vm.ConnectAsync();
+
+        transport.EmitIncoming(EncodeHeartbeat(1, MavType.Quadrotor, MavAutopilot.ArduPilotMega, customMode: 4u));
+
+        int rallySyncCount = 0;
+        vm.RallyPointsChanged += () => rallySyncCount++;
+
+        vm.DefaultRallyAltitudeMeters = 75.0;
+        vm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "rallyAdd", lat = 39.921, lon = 32.851 }));
+        vm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "rallyAdd", lat = 39.931, lon = 32.861 }));
+        Assert.Equal(2, vm.RallyPoints.Count);
+        Assert.Equal(75f, vm.RallyPoints[0].AltitudeMeters);
+        Assert.True(rallySyncCount >= 2);
+
+        vm.HandleMapWebMessage(JsonSerializer.Serialize(new { type = "rallyMove", index = 1, lat = 39.935, lon = 32.865 }));
+        Assert.Equal(39.935, vm.RallyPoints[1].Latitude, 6);
+        Assert.Equal(32.865, vm.RallyPoints[1].Longitude, 6);
+
+        var uploadedRallyItems = new List<MissionItemIntMessage>();
+        byte vehicleSeq = 0;
+        bool clearedOnVehicle = false;
+        transport.OnOutgoingFrame = frame =>
+        {
+            if (frame.MessageId == MissionCountMessage.MsgId)
+            {
+                var countMsg = MissionCountMessage.Decode(frame);
+                Assert.Equal(MavMissionType.Rally, countMsg.MissionType);
+                var req0 = new MissionRequestIntMessage(255, 190, 0, MavMissionType.Rally);
+                transport.EmitIncoming(MavlinkEncoder.EncodeV2(1, 1, vehicleSeq++, req0));
+            }
+            else if (frame.MessageId == MissionItemIntMessage.MsgId)
+            {
+                var item = MissionItemIntMessage.Decode(frame);
+                uploadedRallyItems.Add(item);
+                if (item.Seq + 1 < 2)
+                {
+                    var nextReq = new MissionRequestIntMessage(255, 190, (ushort)(item.Seq + 1), MavMissionType.Rally);
+                    transport.EmitIncoming(MavlinkEncoder.EncodeV2(1, 1, vehicleSeq++, nextReq));
+                }
+                else
+                {
+                    var ack = new MissionAckMessage(255, 190, MavMissionResult.Accepted, MavMissionType.Rally);
+                    transport.EmitIncoming(MavlinkEncoder.EncodeV2(1, 1, vehicleSeq++, ack));
+                }
+            }
+            else if (frame.MessageId == MissionRequestListMessage.MsgId)
+            {
+                var reqList = MissionRequestListMessage.Decode(frame);
+                Assert.Equal(MavMissionType.Rally, reqList.MissionType);
+                var countMsg = new MissionCountMessage(255, 190, 1, MavMissionType.Rally);
+                transport.EmitIncoming(MavlinkEncoder.EncodeV2(1, 1, vehicleSeq++, countMsg));
+            }
+            else if (frame.MessageId == MissionRequestIntMessage.MsgId)
+            {
+                var reqItem = MissionRequestIntMessage.Decode(frame);
+                var rally = new MissionItemIntMessage(
+                    255, 190, reqItem.Seq, MavFrame.GlobalRelativeAltInt, MavCmd.NavRallyPoint,
+                    0, 1, 90f, 180f, 0f, 0f,
+                    (int)Math.Round(39.955 * 1e7), (int)Math.Round(32.875 * 1e7), 85f,
+                    MavMissionType.Rally);
+                transport.EmitIncoming(MavlinkEncoder.EncodeV2(1, 1, vehicleSeq++, rally));
+            }
+            else if (frame.MessageId == MissionClearAllMessage.MsgId)
+            {
+                var clearMsg = MissionClearAllMessage.Decode(frame);
+                Assert.Equal(MavMissionType.Rally, clearMsg.MissionType);
+                clearedOnVehicle = true;
+                var ack = new MissionAckMessage(255, 190, MavMissionResult.Accepted, MavMissionType.Rally);
+                transport.EmitIncoming(MavlinkEncoder.EncodeV2(1, 1, vehicleSeq++, ack));
+            }
+        };
+
+        await vm.UploadRallyAsync();
+        Assert.Equal(2, uploadedRallyItems.Count);
+        Assert.All(uploadedRallyItems, item =>
+        {
+            Assert.Equal(MavCmd.NavRallyPoint, item.Command);
+            Assert.Equal(MavMissionType.Rally, item.MissionType);
+            Assert.Equal(75f, item.Z);
+        });
+
+        await vm.DownloadRallyAsync();
+        Assert.Single(vm.RallyPoints);
+        Assert.Equal(39.955, vm.RallyPoints[0].Latitude, 5);
+        Assert.Equal(85f, vm.RallyPoints[0].AltitudeMeters);
+
+        await vm.ClearRallyAsync();
+        Assert.True(clearedOnVehicle);
+        Assert.Empty(vm.RallyPoints);
+    }
+
+    [Fact]
+    public async Task FollowVehicleToggleAndSettingsPopup_WorkCleanly()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+
+        var followEvents = new List<bool>();
+        vm.FollowVehicleChanged += enabled => followEvents.Add(enabled);
+
+        Assert.False(vm.IsFollowVehicleEnabled);
+        vm.ToggleFollowVehicleCommand.Execute(null);
+        Assert.True(vm.IsFollowVehicleEnabled);
+        vm.ToggleFollowVehicleCommand.Execute(null);
+        Assert.False(vm.IsFollowVehicleEnabled);
+        Assert.Equal([true, false], followEvents);
+
+        RunOnStaThread(() =>
+        {
+            _ = PackUriHelper.UriSchemePack;
+            var popup = new SettingsPopupWindow(vm, () => { });
+            popup.Measure(new Size(540, 470));
+            popup.Arrange(new Rect(0, 0, 540, 470));
+            popup.UpdateLayout();
+            popup.Close();
+        });
+    }
+
+    [Fact]
+    public async Task ResponsiveFormFactor_AdaptsDesktopTabletAndPhoneLandscapeCleanly()
+    {
+        var transport = new FakeTransport();
+        await using MainViewModel vm = CreateTestViewModel(transport, out _);
+
+        // 1) Desktop (1480 x 900)
+        vm.ApplyViewportSize(1480, 900);
+        Assert.Equal(CockpitFormFactor.Desktop, vm.FormFactor);
+        Assert.True(vm.IsDesktopLayout);
+        Assert.True(vm.IsLeftPanelVisible);
+        Assert.True(vm.IsMissionDrawerExpanded);
+        Assert.True(vm.IsRightLogPanelVisible);
+        Assert.Equal(328.0, vm.RightDockWidth);
+        Assert.Equal(224.0, vm.RightCameraHeight);
+        Assert.Equal(178.0, vm.CompactHudHeight);
+
+        // 2) Tablet (1024 x 768)
+        vm.ApplyViewportSize(1024, 768);
+        Assert.Equal(CockpitFormFactor.Tablet, vm.FormFactor);
+        Assert.True(vm.IsTabletLayout);
+        Assert.False(vm.IsLeftPanelVisible);
+        Assert.True(vm.IsMissionDrawerExpanded);
+        Assert.True(vm.IsRightLogPanelVisible);
+        Assert.Equal(278.0, vm.RightDockWidth);
+        Assert.Equal(168.0, vm.RightCameraHeight);
+        Assert.Equal(146.0, vm.CompactHudHeight);
+        Assert.InRange(vm.ResolveExpandedMissionDrawerHeight(), 165.0, 240.0);
+
+        // 3) Phone Landscape (844 x 390) -> drawer collapses automatically so map dominates; log dock hides < 460px height
+        vm.ApplyViewportSize(844, 390);
+        Assert.Equal(CockpitFormFactor.PhoneLandscape, vm.FormFactor);
+        Assert.True(vm.IsPhoneLandscapeLayout);
+        Assert.False(vm.IsLeftPanelVisible);
+        Assert.False(vm.IsMissionDrawerExpanded);
+        Assert.False(vm.IsRightLogPanelVisible);
+        Assert.Equal(224.0, vm.RightDockWidth);
+        Assert.Equal(116.0, vm.RightCameraHeight);
+        Assert.Equal(112.0, vm.CompactHudHeight);
+        Assert.InRange(vm.ResolveExpandedMissionDrawerHeight(), 138.0, 196.0);
+
+        // Taller Phone Landscape (880 x 480) re-shows right log dock while staying compact
+        vm.ApplyViewportSize(880, 480);
+        Assert.Equal(CockpitFormFactor.PhoneLandscape, vm.FormFactor);
+        Assert.True(vm.IsRightLogPanelVisible);
+
+        // Back to Desktop restores sidebar + drawer
+        vm.ApplyViewportSize(1480, 900);
+        Assert.Equal(CockpitFormFactor.Desktop, vm.FormFactor);
+        Assert.True(vm.IsLeftPanelVisible);
+        Assert.True(vm.IsMissionDrawerExpanded);
     }
 
     private static T? FindVisualChild<T>(DependencyObject parent) where T : DependencyObject

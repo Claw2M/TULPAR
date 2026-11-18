@@ -11,4 +11,11 @@ public sealed record MavlinkFrame(
     uint MessageId,
     ReadOnlyMemory<byte> Payload,
     byte IncompatFlags = 0,
-    byte CompatFlags = 0);
+    byte CompatFlags = 0,
+    ReadOnlyMemory<byte> RawBytes = default)
+{
+    /// <summary>
+    /// Original wire packet bytes (header + payload + CRC + optional signature) when parsed from a stream.
+    /// </summary>
+    public ReadOnlyMemory<byte> RawPacketBytes => RawBytes;
+}
